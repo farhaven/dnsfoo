@@ -120,6 +120,7 @@ main(void) {
 			fprintf(stderr, "signal %d%s\n",
 					WTERMSIG(status), WCOREDUMP(status)? " (core dumped)": "");
 		}
+		nchildren--;
 	}
 
 	return 0;
