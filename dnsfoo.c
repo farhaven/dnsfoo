@@ -1,82 +1,15 @@
 #include <err.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include <sys/wait.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/event.h>
-#include <sys/time.h>
 
-#include <sys/queue.h>
-#include <sys/uio.h>
-#include <imsg.h>
-
+#include "handlers.h"
 #include "unbound_update.h"
-
-void
-parse_dhclient_lease(int fd, int msg_fd) {
-	const char *match = "option domain-name-servers";
-	struct imsgbuf ibuf;
-	char *buf, *data;
-	FILE *f;
-	size_t len;
-
-	setproctitle("dhcpv4 lease parser");
-
-	if ((f = fdopen(fd, "r")) == NULL) {
-		err(1, "fdopen");
-	}
-	fseek(f, 0, SEEK_SET);
-
-	/* Skip lines until we found the one we're interested in */
-	while ((buf = fgetln(f, &len)) != NULL) {
-		if (len <= strlen(match) + 1) {
-			continue;
-		}
-
-		/* The last char on a line is ';' which we don't need anyway */
-		len -= 1;
-		buf[len - 1] = '\0';
-
-		if ((buf = strstr(buf, match)) == NULL) {
-			continue;
-		}
-
-		buf += strlen(match) + 1;
-
-		/* The rest of the file isn't interesting, let's skip it */
-		break;
-	}
-	if (buf == NULL) {
-		fprintf(stderr, "No DNS info found :/\n");
-		return;
-	}
-
-	/* Copy data to a safe space */
-	data = calloc(strlen(buf) + 1, sizeof(char));
-	if (data == NULL) {
-		err(1, "calloc");
-	}
-	(void)strlcpy(data, buf, strlen(buf) + 1);
-
-	fprintf(stderr, "dns info: \"%s\" (%ld)\n", data, strlen(data));
-
-	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, strlen(data) + 1) < 0)
-		err(1, "imsg_compose");
-
-	do {
-		if (msgbuf_write(&ibuf.w) > 0) {
-			return;
-		}
-	} while (errno == EAGAIN);
-	err(1, "msgbuf_write");
-}
 
 int
 eventloop(int fd, int msg_fd) {
@@ -105,7 +38,7 @@ eventloop(int fd, int msg_fd) {
 		switch ((child = fork())) {
 			case 0:
 				/* XXX: missing tame() and friends */
-				parse_dhclient_lease(ev.ident, msg_fd);
+				handle_dhcpv4_update(ev.ident, msg_fd);
 				exit(0);
 				break;
 			case -1:
