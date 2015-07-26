@@ -2,15 +2,68 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
 #include <sys/queue.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 #include <imsg.h>
 
 #include "unbound_update.h"
+
+#define MAX_NAME_SERVERS 5
+
+void
+unbound_update_dispatch(char *data, size_t len) {
+	char *params[MAX_NAME_SERVERS + 3]; /* unbound-control, forward, final NULL */
+	char *p, **srv, **tmp;
+	int rslt, numns = 0;
+	pid_t child;
+
+	memset(params, 0, sizeof (params));
+	params[0] = "unbound-control";
+	params[1] = "forward";
+	srv = &params[2];
+	while (numns < MAX_NAME_SERVERS) {
+		p = strsep(&data, ",");
+		if (p == NULL)
+			break;
+		if (*p == '\0')
+			continue;
+		rslt = asprintf(&srv[numns++], "%s", p);
+		if (rslt == -1)
+			err(1, "asprintf");
+	}
+
+	fprintf(stderr, "extracted %d name servers\n", numns);
+
+	for (tmp = params; *tmp != NULL; tmp++) {
+		fprintf(stderr, "%p: \"%s\"\n", (void*) tmp, *tmp);
+	}
+
+	switch ((child = fork())) {
+		case -1:
+			err(1, "fork");
+			break;
+		case 0:
+			fclose(stdout); /* Prevent noise from unbound-control */
+			execvp("unbound-control", params);
+			err(1, "execvp");
+			break;
+		default:
+			if (waitpid(child, NULL, 0) < 0)
+				err(1, "waitpid");
+	}
+
+	for (numns = 0; numns < MAX_NAME_SERVERS; numns++) {
+		if (!srv[numns])
+			break;
+		free(srv[numns]);
+	}
+}
 
 void
 unbound_update_handle_imsg(struct imsgbuf *ibuf) {
@@ -45,8 +98,11 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		}
 		memcpy(idata, imsg.data, datalen);
 		idata[datalen - 1] = '\0';
-		fprintf(stderr, "got unbound update data: \"%s\"\n", idata);
 		imsg_free(&imsg);
+
+		fprintf(stderr, "got unbound update data: \"%s\"\n", idata);
+		unbound_update_dispatch(idata, datalen);
+		free(idata);
 	}
 }
 
