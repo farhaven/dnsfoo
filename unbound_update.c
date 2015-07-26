@@ -19,7 +19,7 @@
 void
 unbound_update_dispatch(char *data, size_t len) {
 	char *params[MAX_NAME_SERVERS + 3]; /* unbound-control, forward, final NULL */
-	char *p, **srv, **tmp;
+	char *p, **srv;
 	int rslt, numns = 0;
 	pid_t child;
 
@@ -36,12 +36,6 @@ unbound_update_dispatch(char *data, size_t len) {
 		rslt = asprintf(&srv[numns++], "%s", p);
 		if (rslt == -1)
 			err(1, "asprintf");
-	}
-
-	fprintf(stderr, "extracted %d name servers\n", numns);
-
-	for (tmp = params; *tmp != NULL; tmp++) {
-		fprintf(stderr, "%p: \"%s\"\n", (void*) tmp, *tmp);
 	}
 
 	switch ((child = fork())) {
