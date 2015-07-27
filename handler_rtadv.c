@@ -1,94 +1,26 @@
 #include <err.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/ioctl.h>
-#include <net/bpf.h>
-#include <sys/socket.h>
 #include <sys/queue.h>
-#include <sys/uio.h>
-#include <imsg.h>
+#include <sys/types.h>
 
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
 #include <netinet/icmp6.h>
 
-#include "unbound_update.h"
-
-void
-dhcpv4_handle_update(int fd, int msg_fd) {
-	const char *match = "option domain-name-servers";
-	struct imsgbuf ibuf;
-	char *buf, *data;
-	FILE *f;
-	size_t len;
-
-	setproctitle("dhcpv4 lease parser");
-
-	if ((f = fdopen(fd, "r")) == NULL) {
-		err(1, "fdopen");
-	}
-	fseek(f, 0, SEEK_SET);
-
-	/* Skip lines until we found the one we're interested in */
-	while ((buf = fgetln(f, &len)) != NULL) {
-		if (len <= strlen(match) + 1) {
-			continue;
-		}
-
-		/* The last char on a line is ';' which we don't need anyway */
-		len -= 1;
-		buf[len - 1] = '\0';
-
-		if ((buf = strstr(buf, match)) == NULL) {
-			continue;
-		}
-
-		buf += strlen(match) + 1;
-
-		/* The rest of the file isn't interesting, let's skip it */
-		break;
-	}
-
-	if (buf == NULL) {
-		/* No DNS info found */
-		return;
-	}
-
-	/* Copy data to a safe space */
-	data = calloc(strlen(buf) + 1, sizeof(char));
-	if (data == NULL) {
-		err(1, "calloc");
-	}
-	(void)strlcpy(data, buf, strlen(buf) + 1);
-
-	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, strlen(data) + 1) < 0)
-		err(1, "imsg_compose");
-	free(data);
-
-	do {
-		if (msgbuf_write(&ibuf.w) > 0) {
-			return;
-		}
-	} while (errno == EAGAIN);
-	err(1, "msgbuf_write");
-}
-
+#include "handlers.h"
 
 /* XXX: un-global these */
 struct msghdr rtadv_msghdr;
 struct sockaddr_in6 rtadv_from;
 char rtadv_answer[1500];
-struct iovec rtadv_rcviov[2];
+struct iovec rtadv_rcviov;
 int rtadv_ifindex;
 
 #define ALLROUTERS "ff02::2"
@@ -101,10 +33,11 @@ rtadv_setup_handler(const char *dev) {
 
 	msglen = CMSG_SPACE(sizeof(struct in6_pktinfo) + CMSG_SPACE(sizeof(int)));
 
-	rcvbuf = malloc(msglen);
+	rcvbuf = calloc(1, msglen);
 	if (rcvbuf == NULL) {
-		err(1, "malloc");
+		err(1, "calloc");
 	}
+	fprintf(stderr, "msglen=%d\n", msglen);
 
 	memset(&sin6_allr, 0, sizeof(sin6_allr));
 	sin6_allr.sin6_family = AF_INET6;
@@ -135,11 +68,11 @@ rtadv_setup_handler(const char *dev) {
 		err(1, "setsockopt ICMP6_FILTER");
 	}
 
-	rtadv_rcviov[0].iov_base = (caddr_t)rtadv_answer;
-	rtadv_rcviov[0].iov_len = sizeof(rtadv_answer);
+	rtadv_rcviov.iov_base = (caddr_t)rtadv_answer;
+	rtadv_rcviov.iov_len = sizeof(rtadv_answer);
 	rtadv_msghdr.msg_name = (caddr_t)&rtadv_from;
 	rtadv_msghdr.msg_namelen = sizeof(rtadv_from);
-	rtadv_msghdr.msg_iov = rtadv_rcviov;
+	rtadv_msghdr.msg_iov = &rtadv_rcviov;
 	rtadv_msghdr.msg_iovlen = 1;
 	rtadv_msghdr.msg_control = (caddr_t) rcvbuf;
 	rtadv_msghdr.msg_controllen = msglen;
@@ -153,6 +86,28 @@ rtadv_setup_handler(const char *dev) {
 }
 
 void
+rtadv_handle_individual_ra(char *data, ssize_t len, int msgfd) {
+	struct nd_router_advert *ra = (struct nd_router_advert*) data;
+	char ntopbuf[INET6_ADDRSTRLEN];
+	off_t pkt_off = sizeof(struct nd_router_advert);
+
+	fprintf(stderr, "rtadv: from %s\n", inet_ntop(AF_INET6, &rtadv_from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
+	fprintf(stderr, "\treachable=%d, retransmit=%d, flags=%x\n",
+			ra->nd_ra_reachable,
+			ra->nd_ra_retransmit,
+			ra->nd_ra_flags_reserved);
+
+	while (pkt_off < len) {
+		struct nd_opt_hdr *opthdr = (struct nd_opt_hdr*)(data + pkt_off);
+		fprintf(stderr, "\toff=%lld, type=%02x\n", pkt_off, opthdr->nd_opt_type);
+		fprintf(stderr, "\t\tlen=%d\n", opthdr->nd_opt_len * 8);
+		pkt_off += opthdr->nd_opt_len * 8;
+		if (opthdr->nd_opt_len == 0)
+			break;
+	}
+}
+
+void
 rtadv_handle_update(int fd, int msgfd) {
 	/* https://tools.ietf.org/html/rfc6106 */
 	char ifnamebuf[IFNAMSIZ];
@@ -160,11 +115,11 @@ rtadv_handle_update(int fd, int msgfd) {
 	struct cmsghdr *cm;
 	struct in6_pktinfo *pi = NULL;
 	struct icmp6_hdr *icp;
-	struct icmp6_nd_router_advert *ra;
-	int len, idx, ifindex = 0;
+	ssize_t len;
+	int ifindex = 0;
 	int *hlimp = NULL;
 
-	if ((len = recvmsg(fd, &rtadv_msghdr, 0)) < 0) {
+	if ((len = recvmsg(fd, &rtadv_msghdr, MSG_WAITALL)) < 0) {
 		warn("recvmsg");
 		return;
 	}
@@ -234,10 +189,6 @@ rtadv_handle_update(int fd, int msgfd) {
 		return;
 	}
 
-	ra = (struct icmp6_nd_router_advert*) rtadv_msghdr.msg_iov[0].iov_base;
-
-	fprintf(stderr, "rtadv: from=%s\n", inet_ntop(AF_INET6, &rtadv_from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
-	for (idx = 0; idx < rtadv_msghdr.msg_iovlen; idx++) {
-		fprintf(stderr, "\tvec #%d: len=%ld\n", idx, rtadv_msghdr.msg_iov[idx].iov_len);
-	}
+	rtadv_handle_individual_ra(rtadv_msghdr.msg_iov[0].iov_base, len, msgfd);
+	fprintf(stderr, "\n");
 }
