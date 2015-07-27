@@ -93,7 +93,7 @@ main(void) {
 	EV_SET(&fi[1].ev, fi[1].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 
 	fi[2].handler = rtadv_handle_update;
-	fi[2].fd = rtadv_setup_bpf("trunk0");
+	fi[2].fd = rtadv_setup_handler("trunk0");
 	/* XXX: add low watermark? */
 	EV_SET(&fi[2].ev, fi[2].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, NULL);
 
