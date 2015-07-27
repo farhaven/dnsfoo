@@ -1,1 +1,1 @@
-void handle_dhcpv4_update(int, int);
+void dhcpv4_handle_update(int, int);

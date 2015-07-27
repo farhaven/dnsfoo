@@ -12,7 +12,7 @@
 #include "unbound_update.h"
 
 void
-handle_dhcpv4_update(int fd, int msg_fd) {
+dhcpv4_handle_update(int fd, int msg_fd) {
 	const char *match = "option domain-name-servers";
 	struct imsgbuf ibuf;
 	char *buf, *data;

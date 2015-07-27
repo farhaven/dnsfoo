@@ -79,13 +79,13 @@ main(void) {
 
 	memset(&fi, 0x0, sizeof fi);
 
-	fi[0].handler = handle_dhcpv4_update;
+	fi[0].handler = dhcpv4_handle_update;
 	fi[0].fd = open("/tmp/dnstest", O_RDONLY);
 	if (fi[0].fd < 0) {
 		err(1, "open(\"/tmp/dnstest\")");
 	}
 
-	fi[1].handler = handle_dhcpv4_update;
+	fi[1].handler = dhcpv4_handle_update;
 	fi[1].fd = open("/var/db/dhclient.leases.trunk0", O_RDONLY);
 	if (fi[1].fd < 0) {
 		err(1, "open(\"/var/db/dhclient.leases.trunk0\"");
