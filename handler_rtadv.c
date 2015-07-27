@@ -4,14 +4,11 @@
 #include <stdlib.h>
 
 #include <sys/queue.h>
-#include <sys/types.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <netinet/ip6.h>
-#include <netinet6/ip6_var.h>
 #include <netinet/icmp6.h>
 
 #include "handlers.h"
@@ -37,7 +34,6 @@ rtadv_setup_handler(const char *dev) {
 	if (rcvbuf == NULL) {
 		err(1, "calloc");
 	}
-	fprintf(stderr, "msglen=%d\n", msglen);
 
 	memset(&sin6_allr, 0, sizeof(sin6_allr));
 	sin6_allr.sin6_family = AF_INET6;
