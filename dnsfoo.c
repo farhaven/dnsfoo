@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <sys/event.h>
 
+#include "config.h"
 #include "handlers.h"
 #include "unbound_update.h"
 
@@ -78,6 +79,8 @@ main(void) {
 	setproctitle(NULL);
 
 	memset(&fi, 0x0, sizeof fi);
+
+	printf("config: %d\n", parse_config("dnsfoo.conf"));
 
 	fi[0].handler = dhcpv4_handle_update;
 	fi[0].fd = open("/tmp/dnslease", O_RDONLY);
