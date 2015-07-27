@@ -51,7 +51,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	}
 
 	/* Copy data to a safe space */
-	data = calloc(strlen(buf) + 1, sizeof(char));
+	data = calloc(1, strlen(buf) + 1);
 	if (data == NULL) {
 		err(1, "calloc");
 	}
