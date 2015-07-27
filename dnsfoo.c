@@ -14,6 +14,7 @@
 
 struct fileinfo {
 	int fd;
+	struct kevent ev;
 	void (*handler)(int, int);
 };
 
@@ -30,10 +31,8 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 	}
 
 	for (idx = 0; idx < nfi; idx++) {
-		EV_SET(&ev, fi[idx].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
-
-		if (kevent(kq, &ev, 1, NULL, 0, NULL) < 0) {
-			err(1, "kevent");
+		if (kevent(kq, &fi[idx].ev, 1, NULL, 0, NULL) < 0) {
+			err(1, "kevent for FD %d", fi[idx].fd);
 		}
 	}
 
@@ -71,7 +70,7 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 int
 main(void) {
 	pid_t cpids[2] = { -1, -1 };
-	struct fileinfo fi[2];
+	struct fileinfo fi[3];
 	int nchildren = 0;
 	int msg_fds[2];
 
@@ -84,12 +83,21 @@ main(void) {
 	if (fi[0].fd < 0) {
 		err(1, "open(\"/tmp/dnstest\")");
 	}
+	EV_SET(&fi[0].ev, fi[0].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 
 	fi[1].handler = dhcpv4_handle_update;
 	fi[1].fd = open("/var/db/dhclient.leases.trunk0", O_RDONLY);
 	if (fi[1].fd < 0) {
 		err(1, "open(\"/var/db/dhclient.leases.trunk0\"");
 	}
+	EV_SET(&fi[1].ev, fi[1].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
+
+	fi[2].handler = rtadv_handle_update;
+	fi[2].fd = rtadv_setup_bpf("trunk0");
+	/* XXX: add low watermark? */
+	EV_SET(&fi[2].ev, fi[2].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, NULL);
+
+	fprintf(stderr, "BPF on FD %d\n", fi[2].fd);
 
 	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds) == -1) {
 		err(1, "socketpair");
