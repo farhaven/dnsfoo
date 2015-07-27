@@ -15,7 +15,7 @@
 struct fileinfo {
 	int fd;
 	struct kevent ev;
-	void (*handler)(int, int);
+	void (*handler)(int, int, void*);
 };
 
 int
@@ -48,7 +48,7 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 				/* XXX: missing tame() and friends */
 				for (idx = 0; idx < nfi; idx++) {
 					if (ev.ident == fi[idx].fd) {
-						fi[idx].handler(ev.ident, msg_fd);
+						fi[idx].handler(ev.ident, msg_fd, ev.udata);
 						break;
 					}
 				}
@@ -70,6 +70,7 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 int
 main(void) {
 	pid_t cpids[2] = { -1, -1 };
+	struct rtadv_info *ri;
 	struct fileinfo fi[3];
 	int nchildren = 0;
 	int msg_fds[2];
@@ -92,9 +93,10 @@ main(void) {
 	}
 	EV_SET(&fi[1].ev, fi[1].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 
+	ri = rtadv_setup_handler("trunk0");
 	fi[2].handler = rtadv_handle_update;
-	fi[2].fd = rtadv_setup_handler("trunk0");
-	EV_SET(&fi[2].ev, fi[2].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, NULL);
+	fi[2].fd = ri->sock;
+	EV_SET(&fi[2].ev, fi[2].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, ri);
 
 	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds) == -1) {
 		err(1, "socketpair");
