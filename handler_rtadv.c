@@ -106,22 +106,20 @@ const char* ra_names[] = {
 
 void
 rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
+	/* TODO: don't ignore option life time */
 	char *data = ri->msghdr.msg_iov[0].iov_base;
 	char *msg = NULL;
 	struct imsgbuf ibuf;
-	struct nd_router_advert *ra = (struct nd_router_advert*) data;
 	struct nd_opt_hdr *opthdr;
 	char ntopbuf[INET6_ADDRSTRLEN];
 	off_t pkt_off = sizeof(struct nd_router_advert);
 
+#ifndef NDEBUG
 	struct sockaddr_in6 *from = (struct sockaddr_in6*) ri->msghdr.msg_name;
 
 	fprintf(stderr, "rtadv: len: %ld from %s\n",
 			len, inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
-	fprintf(stderr, "\treachable=%d, retransmit=%d, flags=%x\n",
-			ra->nd_ra_reachable,
-			ra->nd_ra_retransmit,
-			ra->nd_ra_flags_reserved);
+#endif
 
 	for (pkt_off = sizeof(struct nd_router_advert);
 	     pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
@@ -130,12 +128,6 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 
 		opthdr = (struct nd_opt_hdr*)(data + pkt_off);
 
-		fprintf(stderr, "\toff=%lld, type=%02x ", pkt_off, opthdr->nd_opt_type);
-		if ((opthdr->nd_opt_type <= ND_OPT_DNSSL) && (ra_names[opthdr->nd_opt_type] != NULL))
-			fprintf(stderr, "(%s)\n", ra_names[opthdr->nd_opt_type]);
-		else
-			fprintf(stderr, "(unknown: %d)\n", opthdr->nd_opt_type);
-
 		if (opthdr->nd_opt_len == 0)
 			break;
 
@@ -143,8 +135,10 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 			continue;
 
 		optlen = opthdr->nd_opt_len * 8;
+#ifndef NDEBUG
 		fprintf(stderr, "\t\tRDNSS len=%d hdr=%lu lifetime=%d\n",
 				optlen, sizeof(opthdr), ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
+#endif
 
 		optlen -= sizeof(opthdr);
 		opt = data + pkt_off + sizeof(opthdr);

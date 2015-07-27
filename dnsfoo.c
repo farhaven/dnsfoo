@@ -110,7 +110,9 @@ main(void) {
 			err(1, "fork");
 			break;
 		default:
+#ifndef NDEBUG
 			fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
+#endif
 			close(msg_fds[0]);
 			nchildren++;
 			break;
@@ -124,7 +126,9 @@ main(void) {
 			err(1, "fork");
 			break;
 		default:
+#ifndef NDEBUG
 			fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
+#endif
 			close(msg_fds[1]);
 			nchildren++;
 			break;

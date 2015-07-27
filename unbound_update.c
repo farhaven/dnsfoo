@@ -91,7 +91,9 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		idata[datalen - 1] = '\0';
 		imsg_free(&imsg);
 
+#ifndef NDEBUG
 		fprintf(stderr, "got unbound update data: \"%s\"\n", idata);
+#endif
 		unbound_update_dispatch(idata, datalen);
 		free(idata);
 	}
