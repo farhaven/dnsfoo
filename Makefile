@@ -1,8 +1,11 @@
-CFLAGS += -g -pedantic -Werror -Wall -std=c99
-LDFLAGS += -g -lutil
+PROG= dnsfoo
+SRCS= dnsfoo.c unbound_update.c handler_dhcpv4.c handler_rtadv.c parse.y
+MAN=
 
-dnsfoo: dnsfoo.o unbound_update.o handler_dhcpv4.o handler_rtadv.o
-	$(CC) $(LDFLAGS) -o dnsfoo $(.ALLSRC)
+CFLAGS += -Wall -Werror -pedantic
+CFLAGS += -std=c99
+LDADD += -lutil
+DPADD += ${LIBUTIL}
+YFLAGS=
 
-clean:
-	rm -f dnsfoo *.o
+.include <bsd.prog.mk>
