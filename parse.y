@@ -41,10 +41,15 @@ typedef struct {
 	} v;
 	int lineno;
 } YYSTYPE;
+
+struct config *config;
+struct source *current_source = NULL;
+struct srcspec *current_srcspec = NULL;
 %}
 
 %token	SOURCE
 %token	ERROR
+%token	DHCPV4 RTADV
 
 %token	<v.string>	STRING
 %%
@@ -56,12 +61,64 @@ grammar	:
 		| grammar error '\n' { file->errors++; }
 		;
 
-source	: SOURCE STRING {
-		 printf("source: %s\n", $2);
+source		: {
+			current_source = calloc(1, sizeof(*current_source));
+			if (current_source == NULL) {
+				yyerror("Can't alloc space for source");
+				YYERROR;
+			}
+			TAILQ_INIT(&current_source->specs);
+			TAILQ_INSERT_TAIL(&config->sources, current_source, entry);
+		} SOURCE STRING optnl '{' optnl srcspec_l optnl '}' {
+			current_source->device = strdup($3);
+#ifndef NDEBUG
+			fprintf(stderr, "source: %s\n", $3);
+#endif
 		}
 		;
 
+srcspec_l	: srcspec
+		| srcspec_l srcspec
+		;
+
+srcspec		: { new_srcspec(); } dhcpv4 '\n'
+		| { new_srcspec(); } rtadv '\n'
+		;
+
+dhcpv4		: DHCPV4 STRING {
+#ifndef NDEBUG
+			fprintf(stderr, "dhcpv4 source: %s\n", $2);
+#endif
+			current_srcspec->type = SRC_DHCPV4;
+			current_srcspec->source = strdup($2);
+		}
+		;
+
+rtadv		: RTADV {
+#ifndef NDEBUG
+			fprintf(stderr, "rtadv\n");
+#endif
+			current_srcspec->type = SRC_RTADV;
+			current_srcspec->source = NULL;
+		}
+		;
+
+optnl		: optnl '\n'
+		| /* empty */
+		;
 %%
+
+void
+new_srcspec(void) {
+	current_srcspec = calloc(1, sizeof(*current_srcspec));
+	if (current_srcspec == NULL) {
+		yyerror("Can't alloc space for srcspec");
+	}
+#ifndef NDEBUG
+	fprintf(stderr, "new srcspec: %p\n", (void*) current_srcspec);
+#endif
+	TAILQ_INSERT_TAIL(&current_source->specs, current_srcspec, entry);
+}
 
 struct keywords {
 	const char* k_name;
@@ -307,7 +364,9 @@ int
 lookup(char *s) {
 	/* This has to be sorted */
 	static const struct keywords keywords[] = {
-		{"source", SOURCE}
+		{"dhcpv4", DHCPV4},
+		{"rtadv", RTADV},
+		{"source", SOURCE},
 	};
 
 	const struct keywords *p;
@@ -320,7 +379,7 @@ lookup(char *s) {
 	return STRING;
 }
 
-int
+struct config *
 parse_config(char *filename) {
 	struct file nfile;
 
@@ -338,7 +397,13 @@ parse_config(char *filename) {
 	nfile.lineno = 1;
 
 	file = &nfile;
+
+	config = calloc(1, sizeof(*config));
+	TAILQ_INIT(&config->sources);
+
 	yyparse();
 
-	return (file->errors == 0)? 1: 0;
+	if (file->errors == 0)
+		return config;
+	return NULL;
 }

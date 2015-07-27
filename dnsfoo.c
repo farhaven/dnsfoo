@@ -72,34 +72,51 @@ int
 main(void) {
 	pid_t cpids[2] = { -1, -1 };
 	struct rtadv_info *ri;
-	struct fileinfo fi[3];
-	int nchildren = 0;
+	struct fileinfo *fi = NULL;
+	struct source *sp;
+	struct config *config;
+	int nchildren = 0, nfi = 0;
 	int msg_fds[2];
 
 	setproctitle(NULL);
 
-	memset(&fi, 0x0, sizeof fi);
-
-	printf("config: %d\n", parse_config("dnsfoo.conf"));
-
-	fi[0].handler = dhcpv4_handle_update;
-	fi[0].fd = open("/tmp/dnslease", O_RDONLY);
-	if (fi[0].fd < 0) {
-		err(1, "open(\"/tmp/dnslease\")");
+	config = parse_config("dnsfoo.conf");
+	if (config == NULL) {
+		errx(1, "Couldn't parse config");
 	}
-	EV_SET(&fi[0].ev, fi[0].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
-
-	fi[1].handler = dhcpv4_handle_update;
-	fi[1].fd = open("/var/db/dhclient.leases.trunk0", O_RDONLY);
-	if (fi[1].fd < 0) {
-		err(1, "open(\"/var/db/dhclient.leases.trunk0\"");
+	TAILQ_FOREACH(sp, &config->sources, entry) {
+		struct srcspec *src;
+#ifndef NDEBUG
+		fprintf(stderr, "dev=%s\n", sp->device);
+#endif
+		TAILQ_FOREACH(src, &sp->specs, entry) {
+			fi = reallocarray(fi, nfi + 1, sizeof(*fi));
+			switch (src->type) {
+				case SRC_DHCPV4:
+					fi[nfi].handler = dhcpv4_handle_update;
+					fi[nfi].fd = open(src->source, O_RDONLY);
+					if (fi[nfi].fd < 0) {
+						err(1, "open(\"%s\")", src->source);
+					}
+					EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
+					break;
+				case SRC_RTADV:
+					ri = rtadv_setup_handler(sp->device);
+					fi[nfi].handler = rtadv_handle_update;
+					fi[nfi].fd = ri->sock;
+					EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, ri);
+					break;
+				default:
+					errx(1, "unknown source type %d", src->type);
+			}
+			nfi++;
+#ifndef NDEBUG
+			printf("\tp=%p t=%d %d\n", (void*) src, src->type, SRC_DHCPV4);
+			if (src->type == SRC_DHCPV4)
+				printf("\t\tsrc=%s\n", src->source);
+#endif
+		}
 	}
-	EV_SET(&fi[1].ev, fi[1].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
-
-	ri = rtadv_setup_handler("trunk0");
-	fi[2].handler = rtadv_handle_update;
-	fi[2].fd = ri->sock;
-	EV_SET(&fi[2].ev, fi[2].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, ri);
 
 	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds) == -1) {
 		err(1, "socketpair");
@@ -123,7 +140,7 @@ main(void) {
 
 	switch ((cpids[1] = fork())) {
 		case 0:
-			exit(eventloop(fi, sizeof(fi) / sizeof(fi[0]), msg_fds[1]));
+			exit(eventloop(fi, nfi, msg_fds[1]));
 			break;
 		case -1:
 			err(1, "fork");
