@@ -1,9 +1,13 @@
 #include <err.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
+#include <sys/types.h>
 #include <sys/queue.h>
+#include <sys/uio.h>
+#include <imsg.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -12,6 +16,7 @@
 #include <netinet/icmp6.h>
 
 #include "handlers.h"
+#include "unbound_update.h"
 
 #define ALLROUTERS "ff02::2"
 #define PKTLEN 1500
@@ -100,8 +105,10 @@ const char* ra_names[] = {
 };
 
 void
-rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msgfd) {
+rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 	char *data = ri->msghdr.msg_iov[0].iov_base;
+	char *msg = NULL;
+	struct imsgbuf ibuf;
 	struct nd_router_advert *ra = (struct nd_router_advert*) data;
 	struct nd_opt_hdr *opthdr;
 	char ntopbuf[INET6_ADDRSTRLEN];
@@ -116,7 +123,11 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msgfd) {
 			ra->nd_ra_retransmit,
 			ra->nd_ra_flags_reserved);
 
-	for (pkt_off = sizeof(struct nd_router_advert); pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
+	for (pkt_off = sizeof(struct nd_router_advert);
+	     pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
+		int optlen;
+		char *opt;
+
 		opthdr = (struct nd_opt_hdr*)(data + pkt_off);
 
 		fprintf(stderr, "\toff=%lld, type=%02x ", pkt_off, opthdr->nd_opt_type);
@@ -131,9 +142,44 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msgfd) {
 		if (opthdr->nd_opt_type != ND_OPT_RDNSS)
 			continue;
 
-		fprintf(stderr, "\t\tTODO: handle RDNSS option!\n");
+		optlen = opthdr->nd_opt_len * 8;
+		fprintf(stderr, "\t\tRDNSS len=%d hdr=%lu lifetime=%d\n",
+				optlen, sizeof(opthdr), ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
+
+		optlen -= sizeof(opthdr);
+		opt = data + pkt_off + sizeof(opthdr);
+
+		for (; optlen > 0; optlen -= sizeof(struct in6_addr), opt += sizeof(struct in6_addr)) {
+			struct in6_addr ns;
+			const char* addr;
+			memcpy(&ns, opt, sizeof(struct in6_addr));
+
+			addr = inet_ntop(AF_INET6, &ns, ntopbuf, INET6_ADDRSTRLEN);
+			if (msg == NULL) {
+				msg = calloc(1, strlen(addr) + 1);
+				(void)strlcpy(msg, addr, strlen(addr) + 1);
+			} else {
+				msg = realloc(msg, strlen(msg) + strlen(addr) + 2); /* ',' and terminating '\0' */
+				(void)snprintf(msg + strlen(msg), strlen(addr) + 2, ",%s", addr);
+			}
+		}
 	}
-	fprintf(stderr, "\n");
+
+	if (msg == NULL)
+		return;
+
+	imsg_init(&ibuf, msg_fd);
+	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msg, strlen(msg) + 1) < 0)
+		err(1, "imsg_compose");
+	free(msg);
+
+	do {
+		if (msgbuf_write(&ibuf.w) > 0) {
+			return;
+		}
+	} while (errno == EAGAIN);
+
+	err(1, "msgbuf_write");
 }
 
 void
