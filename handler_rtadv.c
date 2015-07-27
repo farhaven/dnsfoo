@@ -85,9 +85,21 @@ rtadv_setup_handler(const char *dev) {
 	return sock;
 }
 
+const char* ra_names[] = {
+	[ND_OPT_SOURCE_LINKADDR] = "source linkaddr",
+	[ND_OPT_TARGET_LINKADDR] = "target linkaddr",
+	[ND_OPT_PREFIX_INFORMATION] = "prefix info",
+	[ND_OPT_REDIRECTED_HEADER] = "redirected header",
+	[ND_OPT_MTU] = "mtu",
+	[ND_OPT_ROUTE_INFO] = "route info",
+	[ND_OPT_RDNSS] = "rdnss",
+	[ND_OPT_DNSSL] = "dnssl"
+};
+
 void
 rtadv_handle_individual_ra(char *data, ssize_t len, int msgfd) {
 	struct nd_router_advert *ra = (struct nd_router_advert*) data;
+	struct nd_opt_hdr *opthdr;
 	char ntopbuf[INET6_ADDRSTRLEN];
 	off_t pkt_off = sizeof(struct nd_router_advert);
 
@@ -97,11 +109,19 @@ rtadv_handle_individual_ra(char *data, ssize_t len, int msgfd) {
 			ra->nd_ra_retransmit,
 			ra->nd_ra_flags_reserved);
 
-	while (pkt_off < len) {
-		struct nd_opt_hdr *opthdr = (struct nd_opt_hdr*)(data + pkt_off);
-		fprintf(stderr, "\toff=%lld, type=%02x\n", pkt_off, opthdr->nd_opt_type);
-		fprintf(stderr, "\t\tlen=%d\n", opthdr->nd_opt_len * 8);
-		pkt_off += opthdr->nd_opt_len * 8;
+	for (pkt_off = sizeof(struct nd_router_advert); pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
+		opthdr = (struct nd_opt_hdr*)(data + pkt_off);
+
+		fprintf(stderr, "\toff=%lld, type=%02x ", pkt_off, opthdr->nd_opt_type);
+		if ((opthdr->nd_opt_type <= ND_OPT_DNSSL) && (ra_names[opthdr->nd_opt_type] != NULL))
+			fprintf(stderr, "(%s)\n", ra_names[opthdr->nd_opt_type]);
+		else
+			fprintf(stderr, "(unknown: %d)\n", opthdr->nd_opt_type);
+
+		if (opthdr->nd_opt_type == ND_OPT_RDNSS) {
+			fprintf(stderr, "Would try to parse RDNSS header now.\n");
+		}
+
 		if (opthdr->nd_opt_len == 0)
 			break;
 	}
