@@ -114,12 +114,13 @@ rtadv_handle_individual_ra(char *data, ssize_t len, int msgfd) {
 		else
 			fprintf(stderr, "(unknown: %d)\n", opthdr->nd_opt_type);
 
-		if (opthdr->nd_opt_type == ND_OPT_RDNSS) {
-			fprintf(stderr, "Would try to parse RDNSS header now.\n");
-		}
-
 		if (opthdr->nd_opt_len == 0)
 			break;
+
+		if (opthdr->nd_opt_type != ND_OPT_RDNSS)
+			continue;
+
+		fprintf(stderr, "\t\tTODO: handle RDNSS option!\n");
 	}
 }
 
