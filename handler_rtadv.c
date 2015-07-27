@@ -189,6 +189,8 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	int ifindex = 0;
 	int *hlimp = NULL;
 
+	setproctitle("router advertisement handler");
+
 	if ((len = recvmsg(fd, &ri->msghdr, MSG_WAITALL)) < 0) {
 		warn("recvmsg");
 		return;
