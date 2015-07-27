@@ -94,6 +94,7 @@ rtadv_setup_handler(const char *dev) {
 	return rv;
 }
 
+#ifndef NDEBUG
 const char* ra_names[] = {
 	[ND_OPT_SOURCE_LINKADDR] = "source linkaddr",
 	[ND_OPT_TARGET_LINKADDR] = "target linkaddr",
@@ -104,6 +105,7 @@ const char* ra_names[] = {
 	[ND_OPT_RDNSS] = "rdnss",
 	[ND_OPT_DNSSL] = "dnssl"
 };
+#endif
 
 void
 rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
