@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/wait.h>
@@ -11,10 +12,16 @@
 #include "handlers.h"
 #include "unbound_update.h"
 
+struct fileinfo {
+	int fd;
+	void (*handler)(int, int);
+};
+
 int
-eventloop(int fd, int msg_fd) {
+eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 	struct kevent ev;
 	int kq;
+	off_t idx;
 
 	setproctitle("event loop");
 
@@ -22,10 +29,12 @@ eventloop(int fd, int msg_fd) {
 		err(1, "kqueue");
 	}
 
-	EV_SET(&ev, fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
+	for (idx = 0; idx < nfi; idx++) {
+		EV_SET(&ev, fi[idx].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 
-	if (kevent(kq, &ev, 1, NULL, 0, NULL) < 0) {
-		err(1, "kevent");
+		if (kevent(kq, &ev, 1, NULL, 0, NULL) < 0) {
+			err(1, "kevent");
+		}
 	}
 
 	while (1) {
@@ -38,7 +47,13 @@ eventloop(int fd, int msg_fd) {
 		switch ((child = fork())) {
 			case 0:
 				/* XXX: missing tame() and friends */
-				handle_dhcpv4_update(ev.ident, msg_fd);
+				for (idx = 0; idx < nfi; idx++) {
+					if (ev.ident == fi[idx].fd) {
+						fi[idx].handler(ev.ident, msg_fd);
+						break;
+					}
+				}
+				/* XXX: handle unknown ev.ident? */
 				exit(0);
 				break;
 			case -1:
@@ -56,16 +71,24 @@ eventloop(int fd, int msg_fd) {
 int
 main(void) {
 	pid_t cpids[2] = { -1, -1 };
+	struct fileinfo fi[2];
 	int nchildren = 0;
 	int msg_fds[2];
 
-	int dhcp4_fd;
-
 	setproctitle(NULL);
 
-	dhcp4_fd = open("/tmp/dnstest", O_RDONLY);
-	if (dhcp4_fd < 0) {
+	memset(&fi, 0x0, sizeof fi);
+
+	fi[0].handler = handle_dhcpv4_update;
+	fi[0].fd = open("/tmp/dnstest", O_RDONLY);
+	if (fi[0].fd < 0) {
 		err(1, "open(\"/tmp/dnstest\")");
+	}
+
+	fi[1].handler = handle_dhcpv4_update;
+	fi[1].fd = open("/var/db/dhclient.leases.trunk0", O_RDONLY);
+	if (fi[1].fd < 0) {
+		err(1, "open(\"/var/db/dhclient.leases.trunk0\"");
 	}
 
 	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds) == -1) {
@@ -88,7 +111,7 @@ main(void) {
 
 	switch ((cpids[1] = fork())) {
 		case 0:
-			exit(eventloop(dhcp4_fd, msg_fds[1]));
+			exit(eventloop(fi, sizeof(fi) / sizeof(fi[0]), msg_fds[1]));
 			break;
 		case -1:
 			err(1, "fork");
