@@ -23,6 +23,7 @@
 
 struct rtadv_info *
 rtadv_setup_handler(const char *dev) {
+	/* Inspired by OpenBSD's /usr/src/usr.sbin/rtsol.c */
 	struct rtadv_info *rv;
 	struct iovec *iovec;
 	struct sockaddr_in6 sin6_allr;
@@ -178,6 +179,7 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 
 void
 rtadv_handle_update(int fd, int msgfd, void *udata) {
+	/* Inspired by OpenBSD's /usr/src/usr.sbin/rtsol.c */
 	/* https://tools.ietf.org/html/rfc6106 */
 	struct rtadv_info *ri = (struct rtadv_info *) udata;
 	char ifnamebuf[IFNAMSIZ];
