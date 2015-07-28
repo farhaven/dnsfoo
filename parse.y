@@ -48,7 +48,6 @@ struct srcspec *current_srcspec = NULL;
 %}
 
 %token	SOURCE
-%token	TEST
 %token	ERROR
 %token	DHCPV4 RTADV
 %token	STRING
