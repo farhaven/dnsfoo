@@ -46,14 +46,16 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 
 		switch ((child = fork())) {
 			case 0:
-				/* XXX: missing tame() and friends */
 				for (idx = 0; idx < nfi; idx++) {
 					if (ev.ident == fi[idx].fd) {
 						fi[idx].handler(ev.ident, msg_fd, ev.udata);
 						break;
 					}
 				}
-				/* XXX: handle unknown ev.ident? */
+				if (idx == nfi) {
+					/* File handle not found */
+					err(1, "Got event for unknown file handle %d", (int) ev.ident);
+				}
 				exit(0);
 				break;
 			case -1:
