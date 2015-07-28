@@ -2,8 +2,6 @@
 
 %{
 #include <err.h>
-#include <ctype.h>
-#include <stdarg.h>
 #include <stdio.h>
 
 #include <sys/queue.h>
@@ -15,16 +13,7 @@ static struct file {
 	char *name;
 	int lineno;
 	int errors;
-} *file;
-
-TAILQ_HEAD(symhead, sym)	 symhead = TAILQ_HEAD_INITIALIZER(symhead);
-struct sym {
-	TAILQ_ENTRY(sym)	 entry;
-	int			 used;
-	int			 persist;
-	char			*nam;
-	char			*val;
-};
+} file;
 
 extern FILE *yyin;
 int yyparse(void);
@@ -34,8 +23,6 @@ int yyerror(const char *);
 YYSTYPE yylval = { { NULL }, 1 };
 
 struct config *config;
-struct source *current_source = NULL;
-struct srcspec *current_srcspec = NULL;
 %}
 
 %token	SOURCE
@@ -54,7 +41,7 @@ struct srcspec *current_srcspec = NULL;
 grammar	:
 		| grammar '\n'
 		| grammar source '\n'
-		| grammar error '\n' { file->errors++; }
+		| grammar error '\n' { file.errors++; }
 		;
 
 source		: SOURCE STRING optnl '{' optnl srcspec_l optnl '}'
@@ -115,39 +102,36 @@ new_srcspec_l() {
 
 int
 yyerror(const char *msg) {
-	file->errors++;
-	fprintf(stderr, "%s:%d: %s\n", file->name, yylval.lineno, msg);
+	file.errors++;
+	fprintf(stderr, "%s:%d: %s\n", file.name, yylval.lineno, msg);
 	return (0);
 }
 
 struct config *
 parse_config(char *filename) {
-	struct file nfile;
-
-	if ((nfile.name = strdup(filename)) == NULL) {
+	if ((file.name = strdup(filename)) == NULL) {
 		warn("strdup");
-		return 0;
+		return NULL;
 	}
 
-	if ((nfile.stream = fopen(nfile.name, "r")) == NULL) {
-		free(nfile.name);
+	if ((file.stream = fopen(file.name, "r")) == NULL) {
+		free(file.name);
 		warn("fopen");
-		return 0;
+		return NULL;
 	}
 
-	nfile.lineno = 1;
-
-	file = &nfile;
+	file.lineno = 1;
 
 	if ((config = calloc(1, sizeof(*config))) == NULL) {
 		err(1, "calloc");
 	}
 	TAILQ_INIT(&config->sources);
 
-	yyin = file->stream;
+	yyin = file.stream;
 	yyparse();
+	fclose(file.stream);
 
-	if (file->errors == 0)
+	if (file.errors == 0)
 		return config;
 	return NULL;
 }
