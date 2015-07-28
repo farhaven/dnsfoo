@@ -8,13 +8,25 @@ found.
 
 Building
 --------
-If you're running OpenBSD, a simple `make` should do the trick. There is no
-configuration yet, so you have to edit the location to the `dhclient` lease file
-in `dnsfoo.c` yourself.
+If you're running OpenBSD, a simple `make` should do the trick.
 
 `dnsfoo` requires a few things that are specific to OpenBSD, such as the `imsg`
 interface. If you port over `libutil`, it shouldn't be too hard to get working.
 You need a system which provides IPv6 raw sockets.
+
+Configuration
+-------------
+Configuration information is taken from `dnsfoo.conf` in the current directory.
+This is an example:
+
+    source "trunk0" {
+        dhcpv4 "/var/db/dhclient.leases.trunk0"
+        dhcpv4 "/tmp/dnslease"
+        rtadv
+    }
+
+`source` statements group DNS information sources for conflict resolution. You
+can use more than one source statement if you want
 
 Usage
 -----
