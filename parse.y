@@ -1,5 +1,3 @@
-/* Derived from OpenBSD's /usr/src/usr.sbin/bgpd/parse.y */
-
 %{
 #include <err.h>
 #include <stdio.h>
