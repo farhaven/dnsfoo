@@ -62,7 +62,8 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	(void)strlcpy(data, buf, strlen(buf) + 1);
 
 	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, strlen(data) + 1) < 0)
+	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data,
+	                 strlen(data) + 1) < 0)
 		err(1, "imsg_compose");
 	free(data);
 
