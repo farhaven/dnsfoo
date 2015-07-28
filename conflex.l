@@ -5,16 +5,6 @@
 #include "config.h"
 #include "y.tab.h"
 
-typedef struct {
-	union {
-		char *string;
-		struct {
-			enum srctype type;
-			char *source;
-		} spec;
-	} v;
-	int lineno;
-} YYSTYPE;
 extern YYSTYPE yylval;
 %}
 

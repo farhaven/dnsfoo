@@ -31,15 +31,6 @@ int yyparse(void);
 int yylex(void);
 int yyerror(const char *);
 
-typedef struct {
-	union {
-		char *string;
-		struct srcspec *spec;
-		struct srcspec_l *spec_l;
-	} v;
-	int lineno;
-} YYSTYPE;
-
 YYSTYPE yylval = { { NULL }, 1 };
 
 struct config *config;

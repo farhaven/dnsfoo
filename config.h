@@ -25,4 +25,13 @@ struct config {
 	TAILQ_HEAD(, source) sources;
 };
 
+typedef struct {
+	union {
+		char *string;
+		struct srcspec *spec;
+		struct srcspec_l *spec_l;
+	} v;
+	int lineno;
+} YYSTYPE;
+
 struct config *parse_config(char *);
