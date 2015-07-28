@@ -44,36 +44,32 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 			err(1, "kevent");
 		}
 
-		switch ((child = fork())) {
-			case 0:
-				for (idx = 0; idx < nfi; idx++) {
-					if (ev.ident == fi[idx].fd) {
-						fi[idx].handler(ev.ident, msg_fd, ev.udata);
-						break;
-					}
-				}
-				if (idx == nfi) {
-					/* File handle not found */
-					err(1, "Got event for unknown file handle %d", (int) ev.ident);
-				}
+		child = fork();
+
+		if (child == -1)
+			err(1, "fork");
+		else if (child == 0) {
+			for (idx = 0; idx < nfi; idx++) {
+				if (ev.ident != fi[idx].fd)
+					continue;
+				fi[idx].handler(ev.ident, msg_fd, ev.udata);
 				exit(0);
-				break;
-			case -1:
-				err(1, "fork");
-				break;
-			default:
-				waitpid(child, &status, 0);
-#ifndef NDEBUG
-				fprintf(stderr, "Event handler %d exited with ", child);
-				if (WIFEXITED(status)) {
-					fprintf(stderr, "status %d\n", WEXITSTATUS(status));
-				} else if (WIFSIGNALED(status)) {
-					fprintf(stderr, "signal %d%s\n",
-							WTERMSIG(status), WCOREDUMP(status)? " (core dumped)": "");
-				}
-#endif
-				break;
+			}
+
+			err(1, "Unknown file handle %d", (int) ev.ident);
 		}
+
+		waitpid(child, &status, 0);
+#ifndef NDEBUG
+		fprintf(stderr, "Event handler %d exited with ", child);
+		if (WIFEXITED(status)) {
+			fprintf(stderr, "status %d\n", WEXITSTATUS(status));
+		} else if (WIFSIGNALED(status)) {
+			fprintf(stderr, "signal %d%s\n",
+			        WTERMSIG(status),
+			        WCOREDUMP(status)? " (core dumped)": "");
+		}
+#endif
 	}
 
 	return 1;
@@ -97,36 +93,27 @@ main(void) {
 	}
 	TAILQ_FOREACH(sp, &config->sources, entry) {
 		struct srcspec *src;
-#ifndef NDEBUG
-		fprintf(stderr, "dev=%s\n", sp->device);
-#endif
 		TAILQ_FOREACH(src, &sp->specs->l, entry) {
 			fi = reallocarray(fi, nfi + 1, sizeof(*fi));
-			switch (src->type) {
-				case SRC_DHCPV4:
-					fi[nfi].handler = dhcpv4_handle_update;
-					fi[nfi].fd = open(src->source, O_RDONLY);
-					if (fi[nfi].fd < 0) {
-						warn("open(\"%s\")", src->source);
-						continue;
-					}
-					EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
-					break;
-				case SRC_RTADV:
-					ri = rtadv_setup_handler(sp->device);
-					fi[nfi].handler = rtadv_handle_update;
-					fi[nfi].fd = ri->sock;
-					EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, ri);
-					break;
-				default:
-					errx(1, "unknown source type %d", src->type);
+			if (src->type == SRC_DHCPV4) {
+				fi[nfi].handler = dhcpv4_handle_update;
+				fi[nfi].fd = open(src->source, O_RDONLY);
+				if (fi[nfi].fd < 0) {
+					warn("open(\"%s\")", src->source);
+					continue;
+				}
+				EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_VNODE,
+				       EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
+			} else if (src->type == SRC_RTADV) {
+				ri = rtadv_setup_handler(sp->device);
+				fi[nfi].handler = rtadv_handle_update;
+				fi[nfi].fd = ri->sock;
+				EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_READ,
+				       EV_ADD | EV_CLEAR, 0, 0, ri);
+			} else {
+				errx(1, "unknown source type %d", src->type);
 			}
 			nfi++;
-#ifndef NDEBUG
-			printf("\tp=%p t=%d %d\n", (void*) src, src->type, SRC_DHCPV4);
-			if (src->type == SRC_DHCPV4)
-				printf("\t\tsrc=%s\n", src->source);
-#endif
 		}
 	}
 
@@ -134,36 +121,30 @@ main(void) {
 		err(1, "socketpair");
 	}
 
-	switch ((cpids[0] = fork())) {
-		case 0:
-			exit(unbound_update_loop(msg_fds[0]));
-			break;
-		case -1:
-			err(1, "fork");
-			break;
-		default:
+	cpids[0] = fork();
+	if (cpids[0] == -1)
+		err(1, "fork");
+	else if (cpids[0] == 0)
+		exit(unbound_update_loop(msg_fds[0]));
+	else {
 #ifndef NDEBUG
-			fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
+		fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
 #endif
-			close(msg_fds[0]);
-			nchildren++;
-			break;
+		close(msg_fds[0]);
+		nchildren++;
 	}
 
-	switch ((cpids[1] = fork())) {
-		case 0:
-			exit(eventloop(fi, nfi, msg_fds[1]));
-			break;
-		case -1:
-			err(1, "fork");
-			break;
-		default:
+	cpids[1] = fork();
+	if (cpids[1] == -1)
+		err(1, "fork");
+	else if (cpids[1] == 0)
+		exit(eventloop(fi, nfi, msg_fds[1]));
+	else {
 #ifndef NDEBUG
-			fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
+		fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
 #endif
-			close(msg_fds[1]);
-			nchildren++;
-			break;
+		close(msg_fds[1]);
+		nchildren++;
 	}
 
 	while (nchildren > 0) {
@@ -184,7 +165,8 @@ main(void) {
 			fprintf(stderr, "status %d\n", WEXITSTATUS(status));
 		} else if (WIFSIGNALED(status)) {
 			fprintf(stderr, "signal %d%s\n",
-					WTERMSIG(status), WCOREDUMP(status)? " (core dumped)": "");
+			        WTERMSIG(status),
+			        WCOREDUMP(status)? " (core dumped)": "");
 		}
 		nchildren--;
 	}
