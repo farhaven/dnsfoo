@@ -40,7 +40,7 @@ typedef struct {
 	int lineno;
 } YYSTYPE;
 
-YYSTYPE yylval = { NULL, 1 };
+YYSTYPE yylval = { { NULL }, 1 };
 
 struct config *config;
 struct source *current_source = NULL;
