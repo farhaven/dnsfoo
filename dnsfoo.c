@@ -98,7 +98,8 @@ main(void) {
 					fi[nfi].handler = dhcpv4_handle_update;
 					fi[nfi].fd = open(src->source, O_RDONLY);
 					if (fi[nfi].fd < 0) {
-						err(1, "open(\"%s\")", src->source);
+						warn("open(\"%s\")", src->source);
+						continue;
 					}
 					EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 					break;
