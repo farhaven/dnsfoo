@@ -22,7 +22,7 @@ struct fileinfo {
 int
 eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 	struct kevent ev;
-	int kq;
+	int kq, status;
 	off_t idx;
 
 	setproctitle("event loop");
@@ -62,7 +62,16 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 				err(1, "fork");
 				break;
 			default:
-				waitpid(child, NULL, 0);
+				waitpid(child, &status, 0);
+#ifndef NDEBUG
+				fprintf(stderr, "Event handler %d exited with ", child);
+				if (WIFEXITED(status)) {
+					fprintf(stderr, "status %d\n", WEXITSTATUS(status));
+				} else if (WIFSIGNALED(status)) {
+					fprintf(stderr, "signal %d%s\n",
+							WTERMSIG(status), WCOREDUMP(status)? " (core dumped)": "");
+				}
+#endif
 				break;
 		}
 	}
