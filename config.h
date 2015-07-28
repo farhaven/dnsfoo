@@ -11,10 +11,14 @@ struct srcspec {
 	char *source;
 };
 
+struct srcspec_l {
+	TAILQ_HEAD(, srcspec) l;
+};
+
 struct source {
 	char *device;
+	struct srcspec_l *specs;
 	TAILQ_ENTRY(source) entry;
-	TAILQ_HEAD(, srcspec) specs;
 };
 
 struct config {

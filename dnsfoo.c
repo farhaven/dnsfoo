@@ -89,7 +89,7 @@ main(void) {
 #ifndef NDEBUG
 		fprintf(stderr, "dev=%s\n", sp->device);
 #endif
-		TAILQ_FOREACH(src, &sp->specs, entry) {
+		TAILQ_FOREACH(src, &sp->specs->l, entry) {
 			fi = reallocarray(fi, nfi + 1, sizeof(*fi));
 			switch (src->type) {
 				case SRC_DHCPV4:

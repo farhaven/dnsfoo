@@ -25,22 +25,22 @@ struct sym {
 	char			*nam;
 	char			*val;
 };
-int		 symset(const char *, const char *, int);
-char		*symget(const char *);
 
-
+extern FILE *yyin;
 int yyparse(void);
-int lookup(char *);
-int yyerror(const char *, ...)
-    __attribute__((__format__ (printf, 1, 2)))
-    __attribute__((__nonnull__ (1)));
+int yylex(void);
+int yyerror(const char *);
 
 typedef struct {
 	union {
 		char *string;
+		struct srcspec *spec;
+		struct srcspec_l *spec_l;
 	} v;
 	int lineno;
 } YYSTYPE;
+
+YYSTYPE yylval = { NULL, 1 };
 
 struct config *config;
 struct source *current_source = NULL;
@@ -48,10 +48,16 @@ struct srcspec *current_srcspec = NULL;
 %}
 
 %token	SOURCE
+%token	TEST
 %token	ERROR
 %token	DHCPV4 RTADV
+%token	STRING
 
-%token	<v.string>	STRING
+%type	<v.string> STRING
+%type	<v.spec> dhcpv4
+%type	<v.spec> rtadv
+%type	<v.spec> srcspec
+%type	<v.spec_l> srcspec_l
 %%
 
 /* Grammar */
@@ -61,45 +67,42 @@ grammar	:
 		| grammar error '\n' { file->errors++; }
 		;
 
-source		: {
-			current_source = calloc(1, sizeof(*current_source));
-			if (current_source == NULL) {
+source		: SOURCE STRING optnl '{' optnl srcspec_l optnl '}'
+		{
+			struct source *src = calloc(1, sizeof(*src));
+			if (src == NULL) {
 				yyerror("Can't alloc space for source");
 				YYERROR;
 			}
-			TAILQ_INIT(&current_source->specs);
-			TAILQ_INSERT_TAIL(&config->sources, current_source, entry);
-		} SOURCE STRING optnl '{' optnl srcspec_l optnl '}' {
-			current_source->device = strdup($3);
-#ifndef NDEBUG
-			fprintf(stderr, "source: %s\n", $3);
-#endif
+			src->specs = $6;
+			src->device = strdup($2);
+			TAILQ_INSERT_TAIL(&config->sources, src, entry);
+			printf("source: %s\n", $2);
 		}
 		;
 
-srcspec_l	: srcspec
-		| srcspec_l srcspec
+srcspec_l	: srcspec {
+	  		$$ = new_srcspec_l();
+			TAILQ_INSERT_TAIL(&$$->l, $1, entry);
+		}
+		| srcspec_l srcspec {
+			TAILQ_INSERT_TAIL(&$1->l, $2, entry);
+		}
 		;
 
-srcspec		: { new_srcspec(); } dhcpv4 '\n'
-		| { new_srcspec(); } rtadv '\n'
+srcspec		: dhcpv4 '\n' { $$ = $1; }
+		| rtadv '\n' { $$ = $1; }
 		;
 
 dhcpv4		: DHCPV4 STRING {
-#ifndef NDEBUG
 			fprintf(stderr, "dhcpv4 source: %s\n", $2);
-#endif
-			current_srcspec->type = SRC_DHCPV4;
-			current_srcspec->source = strdup($2);
+			$$ = new_srcspec(SRC_DHCPV4, strdup($2));
 		}
 		;
 
 rtadv		: RTADV {
-#ifndef NDEBUG
 			fprintf(stderr, "rtadv\n");
-#endif
-			current_srcspec->type = SRC_RTADV;
-			current_srcspec->source = NULL;
+			$$ = new_srcspec(SRC_RTADV, NULL);
 		}
 		;
 
@@ -108,275 +111,32 @@ optnl		: optnl '\n'
 		;
 %%
 
-void
-new_srcspec(void) {
-	current_srcspec = calloc(1, sizeof(*current_srcspec));
-	if (current_srcspec == NULL) {
-		yyerror("Can't alloc space for srcspec");
+struct srcspec *
+new_srcspec(enum srctype type, char *src) {
+	struct srcspec *s = calloc(1, sizeof(*s));
+	if (s == NULL) {
+		err(1, "calloc");
 	}
-#ifndef NDEBUG
-	fprintf(stderr, "new srcspec: %p\n", (void*) current_srcspec);
-#endif
-	TAILQ_INSERT_TAIL(&current_source->specs, current_srcspec, entry);
+	s->type = type;
+	s->source = src;
+	return s;
 }
 
-struct keywords {
-	const char* k_name;
-	int k_val;
-};
+struct srcspec_l *
+new_srcspec_l() {
+	struct srcspec_l *s = calloc(1, sizeof(*s));
+	if (s == NULL) {
+		err(1, "calloc");
+	}
+	TAILQ_INIT(&s->l);
+	return s;
+}
 
 int
-yyerror(const char *fmt, ...)
-{
-	va_list		 ap;
-	char		*msg;
-
+yyerror(const char *msg) {
 	file->errors++;
-	va_start(ap, fmt);
-	if (vasprintf(&msg, fmt, ap) == -1)
-		errx(1, "yyerror vasprintf");
-	va_end(ap);
-	warn("%s:%d: %s", file->name, yylval.lineno, msg);
-	free(msg);
+	fprintf(stderr, "%s:%d: %s\n", file->name, yylval.lineno, msg);
 	return (0);
-}
-
-int
-kw_cmp(const void *k, const void *e)
-{
-	return (strcmp(k, ((const struct keywords *)e)->k_name));
-}
-
-#define MAXPUSHBACK	128
-
-char	*parsebuf;
-int	 parseindex;
-char	 pushback_buffer[MAXPUSHBACK];
-int	 pushback_index = 0;
-
-int
-lgetc(int quotec)
-{
-	int		c, next;
-
-	if (parsebuf) {
-		/* Read character from the parsebuffer instead of input. */
-		if (parseindex >= 0) {
-			c = parsebuf[parseindex++];
-			if (c != '\0')
-				return (c);
-			parsebuf = NULL;
-		} else
-			parseindex++;
-	}
-
-	if (pushback_index)
-		return (pushback_buffer[--pushback_index]);
-
-	if (quotec) {
-		if ((c = getc(file->stream)) == EOF) {
-			yyerror("reached end of file while parsing "
-			    "quoted string");
-			return (EOF);
-		}
-		return (c);
-	}
-
-	while ((c = getc(file->stream)) == '\\') {
-		next = getc(file->stream);
-		if (next != '\n') {
-			c = next;
-			break;
-		}
-		yylval.lineno = file->lineno;
-		file->lineno++;
-	}
-
-	return (c);
-}
-
-int
-lungetc(int c)
-{
-	if (c == EOF)
-		return (EOF);
-	if (parsebuf) {
-		parseindex--;
-		if (parseindex >= 0)
-			return (c);
-	}
-	if (pushback_index < MAXPUSHBACK-1)
-		return (pushback_buffer[pushback_index++] = c);
-	else
-		return (EOF);
-}
-
-int
-findeol(void)
-{
-	int	c;
-
-	parsebuf = NULL;
-
-	/* skip to either EOF or the first real EOL */
-	while (1) {
-		if (pushback_index)
-			c = pushback_buffer[--pushback_index];
-		else
-			c = lgetc(0);
-		if (c == '\n') {
-			file->lineno++;
-			break;
-		}
-		if (c == EOF)
-			break;
-	}
-	return (ERROR);
-}
-
-char *
-symget(const char *nam)
-{
-	struct sym	*sym;
-
-	TAILQ_FOREACH(sym, &symhead, entry)
-		if (strcmp(nam, sym->nam) == 0) {
-			sym->used = 1;
-			return (sym->val);
-		}
-	return (NULL);
-}
-
-int
-yylex(void)
-{
-	char	 buf[8096];
-	char	*p, *val;
-	int	 quotec, next, c;
-	int	 token;
-
-top:
-	p = buf;
-	while ((c = lgetc(0)) == ' ' || c == '\t')
-		; /* nothing */
-
-	yylval.lineno = file->lineno;
-	if (c == '#')
-		while ((c = lgetc(0)) != '\n' && c != EOF)
-			; /* nothing */
-	if (c == '$' && parsebuf == NULL) {
-		while (1) {
-			if ((c = lgetc(0)) == EOF)
-				return (0);
-
-			if (p + 1 >= buf + sizeof(buf) - 1) {
-				yyerror("string too long");
-				return (findeol());
-			}
-			if (isalnum(c) || c == '_') {
-				*p++ = c;
-				continue;
-			}
-			*p = '\0';
-			lungetc(c);
-			break;
-		}
-		val = symget(buf);
-		if (val == NULL) {
-			yyerror("macro '%s' not defined", buf);
-			return (findeol());
-		}
-		parsebuf = val;
-		parseindex = 0;
-		goto top;
-	}
-
-	switch (c) {
-	case '\'':
-	case '"':
-		quotec = c;
-		while (1) {
-			if ((c = lgetc(quotec)) == EOF)
-				return (0);
-			if (c == '\n') {
-				file->lineno++;
-				continue;
-			} else if (c == '\\') {
-				if ((next = lgetc(quotec)) == EOF)
-					return (0);
-				if (next == quotec || c == ' ' || c == '\t')
-					c = next;
-				else if (next == '\n') {
-					file->lineno++;
-					continue;
-				} else
-					lungetc(next);
-			} else if (c == quotec) {
-				*p = '\0';
-				break;
-			} else if (c == '\0') {
-				yyerror("syntax error");
-				return (findeol());
-			}
-			if (p + 1 >= buf + sizeof(buf) - 1) {
-				yyerror("string too long");
-				return (findeol());
-			}
-			*p++ = c;
-		}
-		yylval.v.string = strdup(buf);
-		if (yylval.v.string == NULL)
-			err(1, "yylex: strdup");
-		return (STRING);
-	}
-
-#define allowed_in_string(x) \
-	(isalnum(x) || (ispunct(x) && x != '(' && x != ')' && \
-	x != '{' && x != '}' && x != '<' && x != '>' && \
-	x != '!' && x != '=' && x != '/' && x != '#' && \
-	x != ','))
-
-	if (isalnum(c) || c == ':' || c == '_' || c == '*') {
-		do {
-			*p++ = c;
-			if ((unsigned)(p-buf) >= sizeof(buf)) {
-				yyerror("string too long");
-				return (findeol());
-			}
-		} while ((c = lgetc(0)) != EOF && (allowed_in_string(c)));
-		lungetc(c);
-		*p = '\0';
-		if ((token = lookup(buf)) == STRING)
-			if ((yylval.v.string = strdup(buf)) == NULL)
-				err(1, "yylex: strdup");
-		return (token);
-	}
-	if (c == '\n') {
-		yylval.lineno = file->lineno;
-		file->lineno++;
-	}
-	if (c == EOF)
-		return (0);
-	return (c);
-}
-
-int
-lookup(char *s) {
-	/* This has to be sorted */
-	static const struct keywords keywords[] = {
-		{"dhcpv4", DHCPV4},
-		{"rtadv", RTADV},
-		{"source", SOURCE},
-	};
-
-	const struct keywords *p;
-	p = bsearch(s, keywords, sizeof(keywords)/sizeof(keywords[0]),
-	            sizeof(keywords[0]), kw_cmp);
-
-	if (p)
-		return p->k_val;
-
-	return STRING;
 }
 
 struct config *
@@ -398,9 +158,12 @@ parse_config(char *filename) {
 
 	file = &nfile;
 
-	config = calloc(1, sizeof(*config));
+	if ((config = calloc(1, sizeof(*config))) == NULL) {
+		err(1, "calloc");
+	}
 	TAILQ_INIT(&config->sources);
 
+	yyin = file->stream;
 	yyparse();
 
 	if (file->errors == 0)

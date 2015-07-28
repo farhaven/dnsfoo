@@ -1,11 +1,10 @@
 PROG= dnsfoo
-SRCS= dnsfoo.c unbound_update.c handler_dhcpv4.c handler_rtadv.c parse.y
+SRCS= dnsfoo.c unbound_update.c handler_dhcpv4.c handler_rtadv.c parse.y conflex.l
 MAN=
 
 CFLAGS += -Wall -Werror -pedantic
 CFLAGS += -std=c99
-LDADD += -lutil
+LDADD += -lutil -lfl
 DPADD += ${LIBUTIL}
-YFLAGS=
 
 .include <bsd.prog.mk>
