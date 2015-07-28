@@ -8,6 +8,8 @@
 #include <sys/queue.h>
 #include <imsg.h>
 
+#include <sys/tame.h>
+
 #include "unbound_update.h"
 
 void
@@ -17,6 +19,8 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	char *buf, *data;
 	FILE *f;
 	size_t len;
+
+	tame(TAME_MALLOC | TAME_RPATH);
 
 	setproctitle("dhcpv4 lease parser");
 
