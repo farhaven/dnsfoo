@@ -15,6 +15,8 @@
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
 
+#include <sys/tame.h>
+
 #include "handlers.h"
 #include "unbound_update.h"
 
@@ -192,6 +194,8 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	ssize_t len;
 	int ifindex = 0;
 	int *hlimp = NULL;
+
+	tame(TAME_MALLOC|TAME_INET);
 
 	setproctitle("router advertisement handler");
 
