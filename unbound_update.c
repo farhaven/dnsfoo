@@ -97,6 +97,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		fprintf(stderr, "nslen =%ld\n", msg.nslen);
 #endif
 		unbound_update_dispatch(&msg);
+		unbound_update_msg_cleanup(&msg);
 	}
 }
 
@@ -195,8 +196,7 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t len)
 	return 1;
 
 exit_fail:
-	free(msg->device);
-	free(msg->ns);
+	unbound_update_msg_cleanup(msg);
 	return 0;
 }
 
@@ -208,4 +208,11 @@ unbound_update_msg_append_ns(struct unbound_update_msg *msg, const char *ns) {
 	(void) strlcpy(msg->ns + msg->nslen, ns, strlen(ns) + 1);
 	msg->nslen += strlen(ns) + 1;
 	return 1;
+}
+
+void
+unbound_update_msg_cleanup(struct unbound_update_msg *msg) {
+	free(msg->device);
+	free(msg->ns);
+	memset(msg, 0x00, sizeof(*msg));
 }

@@ -173,7 +173,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, msglen) < 0)
 		err(1, "imsg_compose");
 	free(data);
-	free(msg.device);
+	unbound_update_msg_cleanup(&msg);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {

@@ -81,7 +81,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, len) < 0)
 		err(1, "imsg_compose");
 	free(data);
-	free(msg.device);
+	unbound_update_msg_cleanup(&msg);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {
