@@ -92,6 +92,7 @@ rtadv_setup_handler(const char *dev) {
 	}
 
 	info->kq_event = EVFILT_READ;
+	info->type = SRC_RTADV;
 
 	return info;
 }

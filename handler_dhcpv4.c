@@ -88,5 +88,6 @@ dhcpv4_setup_handler(const char *device, const char *source) {
 	info->sock = open(source, O_RDONLY);
 	info->kq_event = EVFILT_VNODE;
 	info->kq_note  = NOTE_WRITE;
+	info->type = SRC_DHCPV4;
 	return info;
 }
