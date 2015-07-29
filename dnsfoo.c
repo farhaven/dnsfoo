@@ -61,6 +61,8 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 
 		waitpid(child, &status, 0);
 #ifndef NDEBUG
+		if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+			continue;
 		fprintf(stderr, "Event handler %d exited with ", child);
 		if (WIFEXITED(status)) {
 			fprintf(stderr, "status %d\n", WEXITSTATUS(status));
