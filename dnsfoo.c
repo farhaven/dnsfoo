@@ -75,10 +75,14 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
 	return 1;
 }
 
+const char *srcnames[] = {
+	[SRC_DHCPV4] = "DHCPv4",
+	[SRC_RTADV]  = "RTADV",
+};
+
 int
 main(void) {
 	pid_t cpids[2] = { -1, -1 };
-	struct rtadv_info *ri;
 	struct fileinfo *fi = NULL;
 	struct source *sp;
 	struct config *config;
@@ -94,25 +98,25 @@ main(void) {
 	TAILQ_FOREACH(sp, &config->sources, entry) {
 		struct srcspec *src;
 		TAILQ_FOREACH(src, &sp->specs->l, entry) {
+			struct handler_info *info = NULL;
 			fi = reallocarray(fi, nfi + 1, sizeof(*fi));
 			if (src->type == SRC_DHCPV4) {
+				info = dhcpv4_setup_handler(sp->device, src->source);
 				fi[nfi].handler = dhcpv4_handle_update;
-				fi[nfi].fd = open(src->source, O_RDONLY);
-				if (fi[nfi].fd < 0) {
-					warn("open(\"%s\")", src->source);
-					continue;
-				}
-				EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_VNODE,
-				       EV_ADD | EV_CLEAR, NOTE_WRITE, 0, NULL);
 			} else if (src->type == SRC_RTADV) {
-				ri = rtadv_setup_handler(sp->device);
+				info = rtadv_setup_handler(sp->device);
 				fi[nfi].handler = rtadv_handle_update;
-				fi[nfi].fd = ri->sock;
-				EV_SET(&fi[nfi].ev, fi[nfi].fd, EVFILT_READ,
-				       EV_ADD | EV_CLEAR, 0, 0, ri);
 			} else {
 				errx(1, "unknown source type %d", src->type);
 			}
+			if (info->sock < 0) {
+				warn("failed to open %s handler for device %s", srcnames[info->type], info->device);
+				free(info->device);
+				free(info);
+				continue;
+			}
+			fi[nfi].fd = info->sock;
+			EV_SET(&fi[nfi].ev, fi[nfi].fd, info->kq_event, EV_ADD | EV_CLEAR, info->kq_note, 0, info);
 			nfi++;
 		}
 	}

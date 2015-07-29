@@ -1,8 +1,13 @@
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
 
 #include <sys/socket.h>
 #include <sys/queue.h>
@@ -10,6 +15,7 @@
 
 #include <sys/tame.h>
 
+#include "handlers.h"
 #include "unbound_update.h"
 
 void
@@ -73,4 +79,14 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 		}
 	} while (errno == EAGAIN);
 	err(1, "msgbuf_write");
+}
+
+struct handler_info *
+dhcpv4_setup_handler(const char *device, const char *source) {
+	struct handler_info *info = calloc(1, sizeof(*info));
+	info->device = strdup(device);
+	info->sock = open(source, O_RDONLY);
+	info->kq_event = EVFILT_VNODE;
+	info->kq_note  = NOTE_WRITE;
+	return info;
 }

@@ -1,3 +1,5 @@
+#ifndef _CONFIG_H
+#define _CONFIG_H
 #include <sys/queue.h>
 
 enum srctype {
@@ -35,3 +37,4 @@ typedef struct {
 } YYSTYPE;
 
 struct config *parse_config(char *);
+#endif /* _CONFIG_H */

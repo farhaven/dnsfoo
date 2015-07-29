@@ -5,6 +5,8 @@
 #include <stdlib.h>
 
 #include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
 #include <sys/queue.h>
 #include <sys/uio.h>
 #include <imsg.h>
@@ -23,27 +25,23 @@
 #define ALLROUTERS "ff02::2"
 #define PKTLEN 1500
 
-struct rtadv_info *
+struct handler_info *
 rtadv_setup_handler(const char *dev) {
 	/* Inspired by OpenBSD's /usr/src/usr.sbin/rtsol.c */
-	struct rtadv_info *rv;
+	struct handler_info *info;
 	struct iovec *iovec;
 	struct sockaddr_in6 sin6_allr;
 	struct icmp6_filter filt;
 	int msglen, flag = 1;
 	char *rcvbuf;
 
-	rv = calloc(1, sizeof(*rv));
-	if (rv == NULL) {
+	if ((info = calloc(1, sizeof(*info))) == NULL)
 		err(1, "calloc");
-	}
 
 	msglen = CMSG_SPACE(sizeof(struct in6_pktinfo) + CMSG_SPACE(sizeof(int)));
 
-	rcvbuf = calloc(1, msglen);
-	if (rcvbuf == NULL) {
+	if ((rcvbuf = calloc(1, msglen)) == NULL)
 		err(1, "calloc");
-	}
 
 	memset(&sin6_allr, 0, sizeof(sin6_allr));
 	sin6_allr.sin6_family = AF_INET6;
@@ -53,24 +51,24 @@ rtadv_setup_handler(const char *dev) {
 		err(1, "inet_pton");
 	}
 
-	if ((rv->sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)) < 0) {
+	if ((info->sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)) < 0) {
 		err(1, "socket");
 	}
 
 	/* XXX: set routing table? */
 
-	if (setsockopt(rv->sock, IPPROTO_IPV6, IPV6_RECVPKTINFO, &flag, sizeof(flag)) < 0) {
+	if (setsockopt(info->sock, IPPROTO_IPV6, IPV6_RECVPKTINFO, &flag, sizeof(flag)) < 0) {
 		err(1, "setsockopt IPV6_RECVPKTINFO");
 	}
 
 	flag = 1;
-	if (setsockopt(rv->sock, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &flag, sizeof(flag)) < 0) {
+	if (setsockopt(info->sock, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, &flag, sizeof(flag)) < 0) {
 		err(1, "setsockopt IPV6_RECVHOPLIMIT");
 	}
 
 	ICMP6_FILTER_SETBLOCKALL(&filt);
 	ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filt);
-	if (setsockopt(rv->sock, IPPROTO_ICMPV6, ICMP6_FILTER, &filt, sizeof(filt)) < 0) {
+	if (setsockopt(info->sock, IPPROTO_ICMPV6, ICMP6_FILTER, &filt, sizeof(filt)) < 0) {
 		err(1, "setsockopt ICMP6_FILTER");
 	}
 
@@ -81,19 +79,21 @@ rtadv_setup_handler(const char *dev) {
 	if (iovec->iov_base == NULL)
 		err(1, "calloc");
 	iovec->iov_len = PKTLEN;
-	rv->msghdr.msg_name = (caddr_t)&rv->from;
-	rv->msghdr.msg_namelen = sizeof(rv->from);
-	rv->msghdr.msg_iov = iovec;
-	rv->msghdr.msg_iovlen = 1;
-	rv->msghdr.msg_control = (caddr_t) rcvbuf;
-	rv->msghdr.msg_controllen = msglen;
+	info->v.rtadv.msghdr.msg_name = (caddr_t)&info->v.rtadv.from;
+	info->v.rtadv.msghdr.msg_namelen = sizeof(info->v.rtadv.from);
+	info->v.rtadv.msghdr.msg_iov = iovec;
+	info->v.rtadv.msghdr.msg_iovlen = 1;
+	info->v.rtadv.msghdr.msg_control = (caddr_t) rcvbuf;
+	info->v.rtadv.msghdr.msg_controllen = msglen;
 
-	rv->ifindex = if_nametoindex(dev);
-	if (rv->ifindex == 0) {
+	info->v.rtadv.ifindex = if_nametoindex(dev);
+	if (info->v.rtadv.ifindex == 0) {
 		err(1, "interface %s does not exist", dev);
 	}
 
-	return rv;
+	info->kq_event = EVFILT_READ;
+
+	return info;
 }
 
 #ifndef NDEBUG
@@ -110,9 +110,9 @@ const char* ra_names[] = {
 #endif
 
 void
-rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
+rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	/* TODO: don't ignore option life time */
-	char *data = ri->msghdr.msg_iov[0].iov_base;
+	char *data = ri->v.rtadv.msghdr.msg_iov[0].iov_base;
 	char *msg = NULL;
 	struct imsgbuf ibuf;
 	struct nd_opt_hdr *opthdr;
@@ -120,10 +120,10 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 	off_t pkt_off = sizeof(struct nd_router_advert);
 
 #ifndef NDEBUG
-	struct sockaddr_in6 *from = (struct sockaddr_in6*) ri->msghdr.msg_name;
+	struct sockaddr_in6 *from = (struct sockaddr_in6*) ri->v.rtadv.msghdr.msg_name;
 
-	fprintf(stderr, "rtadv: len: %ld from %s\n",
-			len, inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
+	fprintf(stderr, "rtadv: len: %ld from %s\n", len,
+	        inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
 #endif
 
 	for (pkt_off = sizeof(struct nd_router_advert);
@@ -142,7 +142,8 @@ rtadv_handle_individual_ra(struct rtadv_info *ri, ssize_t len, int msg_fd) {
 		optlen = opthdr->nd_opt_len * 8;
 #ifndef NDEBUG
 		fprintf(stderr, "\t\tRDNSS len=%d hdr=%lu lifetime=%d\n",
-				optlen, sizeof(opthdr), ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
+		        optlen, sizeof(opthdr),
+		        ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
 #endif
 
 		optlen -= sizeof(opthdr);
@@ -185,7 +186,7 @@ void
 rtadv_handle_update(int fd, int msgfd, void *udata) {
 	/* Inspired by OpenBSD's /usr/src/usr.sbin/rtsol.c */
 	/* https://tools.ietf.org/html/rfc6106 */
-	struct rtadv_info *ri = (struct rtadv_info *) udata;
+	struct handler_info *ri = (struct handler_info *) udata;
 	char ifnamebuf[IFNAMSIZ];
 	char ntopbuf[INET6_ADDRSTRLEN];
 	struct cmsghdr *cm;
@@ -199,18 +200,18 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 
 	setproctitle("router advertisement handler");
 
-	if ((len = recvmsg(fd, &ri->msghdr, MSG_WAITALL)) < 0) {
+	if ((len = recvmsg(fd, &ri->v.rtadv.msghdr, MSG_WAITALL)) < 0) {
 		warn("recvmsg");
 		return;
 	}
 
-	if (ri->msghdr.msg_iovlen != 1) {
-		warn("unexpected number of I/O vectors: %d\n", ri->msghdr.msg_iovlen);
+	if (ri->v.rtadv.msghdr.msg_iovlen != 1) {
+		warn("unexpected number of I/O vectors: %d\n", ri->v.rtadv.msghdr.msg_iovlen);
 		return;
 	}
 
-	for (cm = (struct cmsghdr *) CMSG_FIRSTHDR(&ri->msghdr); cm;
-	     cm = (struct cmsghdr *) CMSG_NXTHDR(&ri->msghdr, cm)) {
+	for (cm = (struct cmsghdr *) CMSG_FIRSTHDR(&ri->v.rtadv.msghdr); cm;
+	     cm = (struct cmsghdr *) CMSG_NXTHDR(&ri->v.rtadv.msghdr, cm)) {
 		if (cm->cmsg_level == IPPROTO_IPV6 &&
 		    cm->cmsg_type == IPV6_PKTINFO &&
 		    cm->cmsg_len == CMSG_LEN(sizeof(struct in6_pktinfo))) {
@@ -230,7 +231,7 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 		return;
 	}
 
-	if (ifindex != ri->ifindex) {
+	if (ifindex != ri->v.rtadv.ifindex) {
 		return;
 	}
 
@@ -244,7 +245,7 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 		return;
 	}
 
-	icp = (struct icmp6_hdr*) ri->msghdr.msg_iov[0].iov_base;
+	icp = (struct icmp6_hdr*) ri->v.rtadv.msghdr.msg_iov[0].iov_base;
 
 	if (icp->icmp6_type != ND_ROUTER_ADVERT) {
 		warn("received a packet that is not a router advertisement");
@@ -262,9 +263,9 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 		return;
 	}
 
-	if (pi && !IN6_IS_ADDR_LINKLOCAL(&ri->from.sin6_addr)) {
+	if (pi && !IN6_IS_ADDR_LINKLOCAL(&ri->v.rtadv.from.sin6_addr)) {
 		warn("RA with non link-local source %s received on %s",
-		     inet_ntop(AF_INET6, &ri->from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN),
+		     inet_ntop(AF_INET6, &ri->v.rtadv.from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN),
 		     if_indextoname(ifindex, ifnamebuf));
 		return;
 	}

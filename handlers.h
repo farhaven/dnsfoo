@@ -1,13 +1,24 @@
 #include <netinet/in.h>
 
-struct rtadv_info {
+#include "config.h"
+
+struct handler_info {
+	char *device;
+	int kq_event;
+	int kq_note;
 	int sock;
-	int ifindex;
-	struct sockaddr_in6 from;
-	struct msghdr msghdr;
+	enum srctype type;
+	union {
+		struct {
+			int ifindex;
+			struct msghdr msghdr;
+			struct sockaddr_in6 from;
+		} rtadv;
+	} v;
 };
 
+struct handler_info *dhcpv4_setup_handler(const char*, const char*);
 void dhcpv4_handle_update(int, int, void*);
 
-struct rtadv_info *rtadv_setup_handler(const char*);
+struct handler_info *rtadv_setup_handler(const char*);
 void rtadv_handle_update(int, int, void*);
