@@ -112,13 +112,15 @@ main(void) {
 				errx(1, "unknown source type %d", src->type);
 			}
 			if (info->sock < 0) {
-				warn("failed to open %s handler for device %s", srcnames[info->type], info->device);
+				warn("failed to open %s handler for device %s",
+				     srcnames[info->type], info->device);
 				free(info->device);
 				free(info);
 				continue;
 			}
 			fi[nfi].fd = info->sock;
-			EV_SET(&fi[nfi].ev, fi[nfi].fd, info->kq_event, EV_ADD | EV_CLEAR, info->kq_note, 0, info);
+			EV_SET(&fi[nfi].ev, fi[nfi].fd, info->kq_event,
+			       EV_ADD | EV_CLEAR, info->kq_note, 0, info);
 			nfi++;
 		}
 	}
