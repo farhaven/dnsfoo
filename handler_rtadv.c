@@ -114,11 +114,12 @@ void
 rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	/* TODO: don't ignore option life time */
 	char *data = ri->v.rtadv.msghdr.msg_iov[0].iov_base;
-	char *msg = NULL;
 	struct imsgbuf ibuf;
+	struct unbound_update_msg msg;
 	struct nd_opt_hdr *opthdr;
 	char ntopbuf[INET6_ADDRSTRLEN];
 	off_t pkt_off = sizeof(struct nd_router_advert);
+	size_t msglen;
 
 #ifndef NDEBUG
 	struct sockaddr_in6 *from = (struct sockaddr_in6*) ri->v.rtadv.msghdr.msg_name;
@@ -127,6 +128,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	        inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
 #endif
 
+	memset(&msg, 0x00, sizeof(msg));
 	for (pkt_off = sizeof(struct nd_router_advert);
 	     pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
 		int optlen;
@@ -156,23 +158,22 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 			memcpy(&ns, opt, sizeof(struct in6_addr));
 
 			addr = inet_ntop(AF_INET6, &ns, ntopbuf, INET6_ADDRSTRLEN);
-			if (msg == NULL) {
-				msg = calloc(1, strlen(addr) + 1);
-				(void)strlcpy(msg, addr, strlen(addr) + 1);
-			} else {
-				msg = realloc(msg, strlen(msg) + strlen(addr) + 2); /* ',' and terminating '\0' */
-				(void)snprintf(msg + strlen(msg), strlen(addr) + 2, ",%s", addr);
-			}
+			if (!unbound_update_msg_append_ns(&msg, addr))
+				err(1, "unbound_update_msg_append_ns");
 		}
 	}
 
-	if (msg == NULL)
+	if (msg.nslen == 0)
 		return;
 
+	msg.device = strdup(ri->device);
+	if ((data = unbound_update_msg_pack(&msg, &msglen)) == NULL)
+		err(1, "unbound_update_msg_pack");
 	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msg, strlen(msg) + 1) < 0)
+	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, msglen) < 0)
 		err(1, "imsg_compose");
-	free(msg);
+	free(data);
+	free(msg.device);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {

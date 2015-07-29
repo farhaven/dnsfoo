@@ -21,6 +21,8 @@
 void
 dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	const char *match = "option domain-name-servers";
+	struct handler_info *info = (struct handler_info*) udata;
+	struct unbound_update_msg msg;
 	struct imsgbuf ibuf;
 	char *buf, *data;
 	FILE *f;
@@ -60,18 +62,26 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 		return;
 	}
 
-	/* Copy data to a safe space */
-	data = calloc(1, strlen(buf) + 1);
-	if (data == NULL) {
-		err(1, "calloc");
+	memset(&msg, 0x00, sizeof(msg));
+	msg.device = strdup(info->device);
+	while (1) {
+		char *p = strsep(&buf, ",");
+		if (p == NULL)
+			break;
+		if (*p == '\0')
+			continue;
+		if (!unbound_update_msg_append_ns(&msg, p))
+			err(1, "unbound_update_msg_append_ns");
+		fprintf(stderr, "appended %s to list of name servers, list is now %ld bytes\n", p, msg.nslen);
 	}
-	(void)strlcpy(data, buf, strlen(buf) + 1);
 
+	if ((data = unbound_update_msg_pack(&msg, &len)) == NULL)
+		err(1, "unbound_update_msg_pack");
 	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data,
-	                 strlen(data) + 1) < 0)
+	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, len) < 0)
 		err(1, "imsg_compose");
 	free(data);
+	free(msg.device);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {

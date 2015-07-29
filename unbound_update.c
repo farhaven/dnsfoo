@@ -14,25 +14,22 @@
 #define MAX_NAME_SERVERS 5
 
 void
-unbound_update_dispatch(char *data, size_t len) {
+unbound_update_dispatch(struct unbound_update_msg *msg) {
 	char *params[MAX_NAME_SERVERS + 3]; /* unbound-control, forward, final NULL */
 	char *p, **srv;
-	int rslt, numns = 0;
+	int numns = 0;
 	pid_t child;
 
 	memset(params, 0, sizeof (params));
 	params[0] = "unbound-control";
 	params[1] = "forward";
 	srv = &params[2];
-	while (numns < MAX_NAME_SERVERS) {
-		p = strsep(&data, ",");
-		if (p == NULL)
-			break;
-		if (*p == '\0')
-			continue;
-		rslt = asprintf(&srv[numns++], "%s", p);
-		if (rslt == -1)
+	p = msg->ns;
+	while ((numns < MAX_NAME_SERVERS) && (msg->nslen > 0)) {
+		if ((asprintf(&srv[numns++], "%s", p)) == -1)
 			err(1, "asprintf");
+		msg->nslen -= strlen(p) + 1;
+		p += strlen(p) + 1;
 	}
 
 	switch ((child = fork())) {
@@ -58,6 +55,7 @@ unbound_update_dispatch(char *data, size_t len) {
 
 void
 unbound_update_handle_imsg(struct imsgbuf *ibuf) {
+	struct unbound_update_msg msg;
 	struct imsg imsg;
 	ssize_t n, datalen;
 	char *idata;
@@ -91,11 +89,14 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		idata[datalen - 1] = '\0';
 		imsg_free(&imsg);
 
-#ifndef NDEBUG
-		fprintf(stderr, "got unbound update data: \"%s\"\n", idata);
-#endif
-		unbound_update_dispatch(idata, datalen);
+		if (!unbound_update_msg_unpack(&msg, idata, datalen))
+			warnx("failed to unpack update msg");
 		free(idata);
+#ifndef NDEBUG
+		fprintf(stderr, "device=\"%s\"\n", msg.device);
+		fprintf(stderr, "nslen =%ld\n", msg.nslen);
+#endif
+		unbound_update_dispatch(&msg);
 	}
 }
 
@@ -126,5 +127,74 @@ unbound_update_loop(int msg_fd) {
 		unbound_update_handle_imsg(&ibuf);
 	}
 
+	return 1;
+}
+
+char *
+unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
+	char *p;
+
+	if ((msg->device == NULL) || (msg->ns == NULL)) {
+		warnx("tried to pack an incomplete unbound update msg");
+		return NULL;
+	}
+
+	if ((p = calloc(1, sizeof(msg->nslen))) == NULL)
+		return NULL;
+	memcpy(p, &msg->nslen, sizeof(msg->nslen));
+	*len = sizeof(msg->nslen);
+
+	if ((p = realloc(p, *len + strlen(msg->device) + 1)) == NULL)
+		return NULL;
+	(void) strlcpy(p + *len, msg->device, strlen(msg->device) + 1);
+	*len += strlen(msg->device) + 1;
+
+	if ((p = realloc(p, *len + msg->nslen)) == NULL)
+		return NULL;
+	memcpy(p + *len, msg->ns, msg->nslen);
+	*len += msg->nslen;
+
+	return p;
+}
+
+int
+unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t len) {
+	size_t off = 0;
+
+	if (len < sizeof(msg->nslen)) {
+		warnx("tried to unpack short update msg (%ld < %ld)", len, sizeof(msg->nslen));
+		return 0;
+	}
+	memcpy(&msg->nslen, src, sizeof(msg->nslen));
+	off += sizeof(msg->nslen);
+
+	if (len - off < strlen(src + off) + 1) {
+		warnx("tried to unpack short update msg (%ld < %ld)", len - off, strlen(src + off) + 1);
+		return 0;
+	}
+	if ((msg->device = calloc(1, strlen(src + off) + 1)) == NULL)
+		return 0;
+	(void) strlcpy(msg->device, src + off, strlen(src + off) + 1);
+	off += strlen(msg->device) + 1;
+
+	if (len - off < 1) {
+		warnx("tried to unpack short update msg (%ld - %ld < 1)", len, off);
+		return 0;
+	}
+
+	if ((msg->ns = calloc(1, len - off)) == NULL)
+		return 0;
+	memcpy(msg->ns, src + off, len - off);
+
+	return 1;
+}
+
+int
+unbound_update_msg_append_ns(struct unbound_update_msg *msg, const char *ns) {
+	msg->ns = realloc(msg->ns, msg->nslen + strlen(ns) + 1);
+	if (msg->ns == NULL)
+		return 0;
+	(void) strlcpy(msg->ns + msg->nslen, ns, strlen(ns) + 1);
+	msg->nslen += strlen(ns) + 1;
 	return 1;
 }
