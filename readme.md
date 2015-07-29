@@ -70,7 +70,7 @@ Run `dnsfoo`:
                 RDNSS len=40 hdr=8 lifetime=3600
     got unbound update data: "2001:470:7193:6::1,2001:470:7193:10::1"
 
-And observer unbounds forwarders:
+And observe unbounds forwarders:
 
     $ unbound-control forward
     2001:470:7193:10::1 2001:470:7193:6::1
