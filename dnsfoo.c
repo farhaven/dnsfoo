@@ -93,8 +93,7 @@ main(void) {
 
 	setproctitle(NULL);
 
-	config = parse_config("dnsfoo.conf");
-	if (config == NULL) {
+	if ((config = parse_config("dnsfoo.conf")) == NULL) {
 		errx(1, "Couldn't parse config");
 	}
 	TAILQ_FOREACH(sp, &config->sources, entry) {
