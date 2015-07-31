@@ -165,6 +165,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		return;
 
 	msg.device = strdup(ri->device);
+	msg.type = ri->type;
 	if ((data = unbound_update_msg_pack(&msg, &msglen)) == NULL)
 		err(1, "unbound_update_msg_pack");
 	imsg_init(&ibuf, msg_fd);

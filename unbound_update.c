@@ -140,10 +140,15 @@ unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
 		goto exit_fail;
 	}
 
-	if ((p = calloc(1, sizeof(msg->nslen))) == NULL)
+	if ((p = calloc(1, sizeof(msg->type))) == NULL)
 		goto exit_fail;
-	memcpy(p, &msg->nslen, sizeof(msg->nslen));
-	*len = sizeof(msg->nslen);
+	memcpy(p, &msg->type, sizeof(msg->type));
+	*len = sizeof(msg->type);
+
+	if ((p = realloc(p, *len + sizeof(msg->nslen))) == NULL)
+		goto exit_fail;
+	memcpy(p + *len, &msg->nslen, sizeof(msg->nslen));
+	*len += sizeof(msg->nslen);
 
 	if ((p = realloc(p, *len + strlen(msg->device) + 1)) == NULL)
 		goto exit_fail;
@@ -163,35 +168,45 @@ exit_fail:
 }
 
 int
-unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t len) {
-	size_t off = 0;
+unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srclen) {
+	size_t off = 0, len;
 
 	memset(msg, 0x00, sizeof(*msg));
 
+	if (srclen < sizeof(msg->type)) {
+		warnx("tried to unpack short update msg (%ld < %ld)", srclen, sizeof(msg->nslen));
+		goto exit_fail;
+	}
+	memcpy(&msg->type, src, sizeof(msg->type));
+	off += sizeof(msg->type);
+
+	len = srclen - off;
 	if (len < sizeof(msg->nslen)) {
 		warnx("tried to unpack short update msg (%ld < %ld)", len, sizeof(msg->nslen));
 		goto exit_fail;
 	}
-	memcpy(&msg->nslen, src, sizeof(msg->nslen));
+	memcpy(&msg->nslen, src + off, sizeof(msg->nslen));
 	off += sizeof(msg->nslen);
 
-	if (len - off < strlen(src + off) + 1) {
-		warnx("tried to unpack short update msg (%ld < %ld)", len - off, strlen(src + off) + 1);
+	len = srclen - off;
+	if (len < strnlen(src + off, len) + 1) {
+		warnx("tried to unpack short update msg (%ld < %ld)", len, strnlen(src + off, len) + 1);
 		goto exit_fail;
 	}
-	if ((msg->device = calloc(1, strlen(src + off) + 1)) == NULL)
+	if ((msg->device = calloc(1, strnlen(src + off, len) + 1)) == NULL)
 		goto exit_fail;
-	(void) strlcpy(msg->device, src + off, strlen(src + off) + 1);
+	(void) strlcpy(msg->device, src + off, strnlen(src + off, len) + 1);
 	off += strlen(msg->device) + 1;
 
-	if (len - off < 1) {
-		warnx("tried to unpack short update msg (%ld - %ld < 1)", len, off);
+	if (srclen - off < 1) {
+		warnx("tried to unpack short update msg (%ld - %ld < 1)", srclen, off);
 		goto exit_fail;
 	}
 
-	if ((msg->ns = calloc(1, len - off)) == NULL)
+	len = srclen - off;
+	if ((msg->ns = calloc(1, len)) == NULL)
 		goto exit_fail;
-	memcpy(msg->ns, src + off, len - off);
+	memcpy(msg->ns, src + off, len);
 
 	return 1;
 

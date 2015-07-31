@@ -1,5 +1,6 @@
 PROG= dnsfoo
-SRCS= dnsfoo.c unbound_update.c handler_dhcpv4.c handler_rtadv.c parse.y conflex.l
+SRCS = dnsfoo.c unbound_update.c handler_dhcpv4.c handler_rtadv.c parse.y conflex.l
+SRCS+= serverrepo.c
 MAN=
 
 CFLAGS += -Wall -Werror -pedantic

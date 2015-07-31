@@ -1,11 +1,14 @@
 #ifndef _UNBOUND_UPDATE_H
 #define _UNBOUND_UPDATE_H
+#include "config.h"
 
 enum unbound_msg_type {
 	MSG_UNBOUND_UPDATE
 };
 
 struct unbound_update_msg {
+	/* Source type this message originated from */
+	enum srctype type;
 	/* Device these name servers come from */
 	char *device;
 	/* Total length of the name server list in this message */

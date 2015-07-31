@@ -12,6 +12,7 @@
 #include "config.h"
 #include "handlers.h"
 #include "unbound_update.h"
+#include "serverrepo.h"
 
 struct fileinfo {
 	int fd;
@@ -84,12 +85,13 @@ const char *srcnames[] = {
 
 int
 main(void) {
-	pid_t cpids[2] = { -1, -1 };
+	pid_t cpids[3] = { -1, -1, -1 };
 	struct fileinfo *fi = NULL;
 	struct source *sp;
 	struct config *config;
 	int nchildren = 0, nfi = 0;
-	int msg_fds[2];
+	int msg_fds_handlers[2];
+	int msg_fds_unbound[2];
 
 	setproctitle(NULL);
 
@@ -124,7 +126,10 @@ main(void) {
 		}
 	}
 
-	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds) == -1) {
+	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds_handlers) == -1) {
+		err(1, "socketpair");
+	}
+	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, msg_fds_unbound) == -1) {
 		err(1, "socketpair");
 	}
 
@@ -132,12 +137,11 @@ main(void) {
 	if (cpids[0] == -1)
 		err(1, "fork");
 	else if (cpids[0] == 0)
-		exit(unbound_update_loop(msg_fds[0]));
+		exit(unbound_update_loop(msg_fds_unbound[0]));
 	else {
 #ifndef NDEBUG
 		fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
 #endif
-		close(msg_fds[0]);
 		nchildren++;
 	}
 
@@ -145,14 +149,30 @@ main(void) {
 	if (cpids[1] == -1)
 		err(1, "fork");
 	else if (cpids[1] == 0)
-		exit(eventloop(fi, nfi, msg_fds[1]));
+		exit(eventloop(fi, nfi, msg_fds_handlers[0]));
 	else {
 #ifndef NDEBUG
 		fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
 #endif
-		close(msg_fds[1]);
 		nchildren++;
 	}
+
+	cpids[2] = fork();
+	if (cpids[2] == -1)
+		err(1, "fork");
+	else if (cpids[2] == 0)
+		exit(serverrepo_loop(msg_fds_handlers[1], msg_fds_unbound[1]));
+	else {
+#ifndef NDEBUG
+		fprintf(stderr, "server repo forked (%d)\n", cpids[2]);
+#endif
+		nchildren++;
+	}
+
+	close(msg_fds_unbound[0]);
+	close(msg_fds_unbound[1]);
+	close(msg_fds_handlers[0]);
+	close(msg_fds_handlers[1]);
 
 	while (nchildren > 0) {
 		int status;
@@ -163,6 +183,8 @@ main(void) {
 			which = "unbound updater";
 		} else if (chld == cpids[1]) {
 			which = "event loop";
+		} else if (chld == cpids[2]) {
+			which = "server repo";
 		} else {
 			which = "unknown";
 		}

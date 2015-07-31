@@ -6,12 +6,11 @@
 #include <string.h>
 
 #include <sys/event.h>
-
 #include <sys/socket.h>
+#include <sys/tame.h>
 #include <imsg.h>
 
-#include <sys/tame.h>
-
+#include "config.h"
 #include "handlers.h"
 #include "unbound_update.h"
 
@@ -61,6 +60,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 
 	memset(&msg, 0x00, sizeof(msg));
 	msg.device = strdup(info->device);
+	msg.type = info->type;
 	while (1) {
 		char *p = strsep(&buf, ",");
 		if (p == NULL)
