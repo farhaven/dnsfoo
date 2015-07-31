@@ -17,14 +17,14 @@ struct srcspec_l {
 	TAILQ_HEAD(, srcspec) l;
 };
 
-struct source {
+struct device {
 	char *device;
 	struct srcspec_l *specs;
-	TAILQ_ENTRY(source) entry;
+	TAILQ_ENTRY(device) entry;
 };
 
 struct config {
-	TAILQ_HEAD(, source) sources;
+	TAILQ_HEAD(, device) devices;
 };
 
 typedef struct {

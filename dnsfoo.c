@@ -87,7 +87,7 @@ int
 main(void) {
 	pid_t cpids[3] = { -1, -1, -1 };
 	struct fileinfo *fi = NULL;
-	struct source *sp;
+	struct device *sp;
 	struct config *config;
 	int nchildren = 0, nfi = 0;
 	int msg_fds_handlers[2];
@@ -98,7 +98,7 @@ main(void) {
 	if ((config = parse_config("dnsfoo.conf")) == NULL) {
 		errx(1, "Couldn't parse config");
 	}
-	TAILQ_FOREACH(sp, &config->sources, entry) {
+	TAILQ_FOREACH(sp, &config->devices, entry) {
 		struct srcspec *src;
 		TAILQ_FOREACH(src, &sp->specs->l, entry) {
 			struct handler_info *info = NULL;

@@ -19,13 +19,13 @@ Configuration
 Configuration information is taken from `dnsfoo.conf` in the current directory.
 This is an example:
 
-    source "trunk0" {
+    device "trunk0" {
         dhcpv4 "/var/db/dhclient.leases.trunk0"
         dhcpv4 "/tmp/dnslease"
         rtadv
     }
 
-`source` statements group DNS information sources for conflict resolution. You
+`device` statements group DNS information sources for conflict resolution. You
 can use more than one source statement if you want
 
 Usage

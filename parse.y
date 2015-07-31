@@ -22,7 +22,7 @@ YYSTYPE yylval = { { NULL }, 1 };
 struct config *config;
 %}
 
-%token	SOURCE
+%token	DEVICE
 %token	ERROR
 %token	DHCPV4 RTADV
 %token	STRING
@@ -37,20 +37,20 @@ struct config *config;
 /* Grammar */
 grammar	:
 		| grammar '\n'
-		| grammar source '\n'
+		| grammar device '\n'
 		| grammar error '\n' { file.errors++; }
 		;
 
-source		: SOURCE STRING optnl '{' optnl srcspec_l optnl '}'
+device		: DEVICE STRING optnl '{' optnl srcspec_l optnl '}'
 		{
-			struct source *src = calloc(1, sizeof(*src));
+			struct device *src = calloc(1, sizeof(*src));
 			if (src == NULL) {
-				yyerror("Can't alloc space for source");
+				yyerror("Can't alloc space for device");
 				YYERROR;
 			}
 			src->specs = $6;
 			src->device = $2;
-			TAILQ_INSERT_TAIL(&config->sources, src, entry);
+			TAILQ_INSERT_TAIL(&config->devices, src, entry);
 		}
 		;
 
@@ -120,7 +120,7 @@ parse_config(char *filename) {
 	if ((config = calloc(1, sizeof(*config))) == NULL) {
 		err(1, "calloc");
 	}
-	TAILQ_INIT(&config->sources);
+	TAILQ_INIT(&config->devices);
 
 	yyin = file.stream;
 	yyparse();

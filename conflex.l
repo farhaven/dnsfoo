@@ -9,7 +9,7 @@ extern YYSTYPE yylval;
 %}
 
 %%
-source		return SOURCE;
+device		return DEVICE;
 dhcpv4		return DHCPV4;
 rtadv		return RTADV;
 \{		return '{';
