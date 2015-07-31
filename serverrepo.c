@@ -11,16 +11,91 @@
 #include <sys/uio.h>
 #include <imsg.h>
 
+#include "config.h"
 #include "unbound_update.h"
 
+struct srv_source {
+	TAILQ_ENTRY(srv_source) entry;
+	enum srctype type;
+	char *ns;
+	size_t nslen;
+};
+
+struct srv_device {
+	TAILQ_ENTRY(srv_device) entry;
+	TAILQ_HEAD(, srv_source) sources;
+	char *name;
+};
+
+TAILQ_HEAD(, srv_device) devices;
+
 void
-serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd) {
+serverrepo_set_source(struct unbound_update_msg *msg) {
+	struct srv_device *dev;
+	struct srv_source *src;
+
+	TAILQ_FOREACH(dev, &devices, entry) {
+		if (!strcmp(dev->name, msg->device))
+			break;
+	}
+	if (dev == NULL) {
+		if ((dev = calloc(1, sizeof(struct srv_device))) == NULL)
+			err(1, "calloc");
+		dev->name = strdup(msg->device);
+		TAILQ_INIT(&dev->sources);
+		TAILQ_INSERT_TAIL(&devices, dev, entry);
+	}
+
+	TAILQ_FOREACH(src, &dev->sources, entry) {
+		if (src->type == msg->type)
+			break;
+	}
+	if (src != NULL) {
+		TAILQ_REMOVE(&dev->sources, src, entry);
+		free(src->ns);
+		free(src);
+	}
+	if ((src = calloc(1, sizeof(struct srv_source))) == NULL)
+		err(1, "calloc");
+	src->type = msg->type;
+	src->nslen = msg->nslen;
+	if ((src->ns = calloc(1, msg->nslen)) == NULL)
+		err(1, "calloc");
+	memcpy(src->ns, msg->ns, msg->nslen);
+	TAILQ_INSERT_TAIL(&dev->sources, src, entry);
+
+	fprintf(stderr, "dev=%p src=%p\n", (void*) dev, (void*) src);
+}
+
+void
+serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
+	struct unbound_update_msg msg_out;
+	struct srv_device *dev;
 	struct imsgbuf ibuf;
 	char *msgdata;
 	size_t msglen;
 
-	if ((msgdata = unbound_update_msg_pack(msg, &msglen)) == NULL)
+	serverrepo_set_source(msg_in);
+
+	memset(&msg_out, 0x00, sizeof(msg_out));
+	msg_out.type = msg_in->type;
+	msg_out.device = strdup(msg_in->device);
+
+	TAILQ_FOREACH(dev, &devices, entry) {
+		struct srv_source *src;
+		if (strcmp(dev->name, msg_in->device))
+			continue;
+		TAILQ_FOREACH(src, &dev->sources, entry) {
+			if ((msg_out.ns = realloc(msg_out.ns, msg_out.nslen + src->nslen)) == NULL)
+				err(1, "realloc");
+			memcpy(msg_out.ns + msg_out.nslen, src->ns, src->nslen);
+			msg_out.nslen += src->nslen;
+		}
+	}
+
+	if ((msgdata = unbound_update_msg_pack(&msg_out, &msglen)) == NULL)
 		err(1, "failed to pack unbound update message");
+	unbound_update_msg_cleanup(&msg_out);
 
 	imsg_init(&ibuf, msgfd);
 	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
@@ -28,7 +103,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd) {
 	free(msgdata);
 
 	fprintf(stderr, "dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
-	        msg->device, msg->nslen, msg->type);
+	        msg_out.device, msg_out.nslen, msg_out.type);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0)
@@ -50,6 +125,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound) {
 
 	setproctitle("conflict resolution");
 
+	TAILQ_INIT(&devices);
 	imsg_init(&ibuf, msg_fd_handlers);
 
 	if ((kq = kqueue()) < 0)
