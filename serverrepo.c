@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/tame.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -122,6 +123,8 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound) {
 	int kq;
 	char *imsgdata;
 	ssize_t n, datalen;
+
+	tame(TAME_MALLOC|TAME_RPATH);
 
 	setproctitle("conflict resolution");
 
