@@ -9,7 +9,6 @@
 static struct file {
 	FILE *stream;
 	char *name;
-	int lineno;
 	int errors;
 } file;
 
@@ -118,8 +117,6 @@ parse_config(char *filename) {
 		warn("fopen");
 		return NULL;
 	}
-
-	file.lineno = 1;
 
 	if ((config = calloc(1, sizeof(*config))) == NULL) {
 		err(1, "calloc");
