@@ -49,8 +49,7 @@ source		: SOURCE STRING optnl '{' optnl srcspec_l optnl '}'
 				YYERROR;
 			}
 			src->specs = $6;
-			src->device = strdup($2);
-			free($2);
+			src->device = $2;
 			TAILQ_INSERT_TAIL(&config->sources, src, entry);
 		}
 		;
@@ -68,7 +67,7 @@ srcspec		: dhcpv4 '\n' { $$ = $1; }
 		| rtadv '\n' { $$ = $1; }
 		;
 
-dhcpv4		: DHCPV4 STRING { $$ = new_srcspec(SRC_DHCPV4, strdup($2)); free($2); } ;
+dhcpv4		: DHCPV4 STRING { $$ = new_srcspec(SRC_DHCPV4, $2); } ;
 
 rtadv		: RTADV { $$ = new_srcspec(SRC_RTADV, NULL); } ;
 
