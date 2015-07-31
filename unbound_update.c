@@ -89,7 +89,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		imsg_free(&imsg);
 
 		if (!unbound_update_msg_unpack(&msg, idata, datalen))
-			warnx("failed to unpack update msg");
+			errx(1, "failed to unpack update msg");
 		free(idata);
 #ifndef NDEBUG
 		fprintf(stderr, "device=\"%s\"\n", msg.device);
