@@ -1,5 +1,6 @@
 #include <err.h>
 #include <fcntl.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +9,9 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/event.h>
+#include <sys/syslimits.h>
 
+#include "dnsfoo.h"
 #include "config.h"
 #include "handlers.h"
 #include "unbound_update.h"
@@ -21,12 +24,39 @@ struct fileinfo {
 };
 
 int
-eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd) {
+privdrop(char *name) {
+	gid_t grouplist[NGROUPS_MAX];
+	int ngroups = NGROUPS_MAX;
+	struct passwd *pw;
+
+	if ((pw = getpwnam(name)) == NULL)
+		return 0;
+
+	if (getgrouplist(name, pw->pw_gid, grouplist, &ngroups) < 0)
+		return 0;
+
+	if (setgroups(ngroups, grouplist) < 0)
+		return 0;
+
+	if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0)
+		return 0;
+
+	if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0)
+		return 0;
+
+	return 1;
+}
+
+int
+eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd, struct config *config) {
 	struct kevent ev;
 	int kq, status;
 	off_t idx;
 
 	setproctitle("event loop");
+
+	if (!privdrop(config->user))
+		err(1, "privdrop");
 
 	if ((kq = kqueue()) < 0) {
 		err(1, "kqueue");
@@ -137,7 +167,7 @@ main(void) {
 	if (cpids[0] == -1)
 		err(1, "fork");
 	else if (cpids[0] == 0)
-		exit(unbound_update_loop(msg_fds_unbound[0]));
+		exit(unbound_update_loop(msg_fds_unbound[0], config));
 	else {
 #ifndef NDEBUG
 		fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
@@ -149,7 +179,7 @@ main(void) {
 	if (cpids[1] == -1)
 		err(1, "fork");
 	else if (cpids[1] == 0)
-		exit(eventloop(fi, nfi, msg_fds_handlers[0]));
+		exit(eventloop(fi, nfi, msg_fds_handlers[0], config));
 	else {
 #ifndef NDEBUG
 		fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
@@ -160,14 +190,17 @@ main(void) {
 	cpids[2] = fork();
 	if (cpids[2] == -1)
 		err(1, "fork");
-	else if (cpids[2] == 0)
-		exit(serverrepo_loop(msg_fds_handlers[1], msg_fds_unbound[1]));
-	else {
+	else if (cpids[2] == 0) {
+		/* kill(getpid(), SIGSTOP); */
+		exit(serverrepo_loop(msg_fds_handlers[1], msg_fds_unbound[1], config));
+	} else {
 #ifndef NDEBUG
 		fprintf(stderr, "server repo forked (%d)\n", cpids[2]);
 #endif
 		nchildren++;
 	}
+
+	privdrop(config->user);
 
 	close(msg_fds_unbound[0]);
 	close(msg_fds_unbound[1]);

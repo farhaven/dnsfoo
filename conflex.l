@@ -9,6 +9,7 @@ extern YYSTYPE yylval;
 %}
 
 %%
+user		return USER;
 device		return DEVICE;
 dhcpv4		return DHCPV4;
 rtadv		return RTADV;

@@ -22,6 +22,7 @@ YYSTYPE yylval = { { NULL }, 1 };
 struct config *config;
 %}
 
+%token	USER
 %token	DEVICE
 %token	ERROR
 %token	DHCPV4 RTADV
@@ -37,10 +38,15 @@ struct config *config;
 /* Grammar */
 grammar	:
 		| grammar '\n'
+		| grammar user '\n'
 		| grammar device '\n'
 		| grammar error '\n' { file.errors++; }
 		;
 
+user		: USER STRING {
+			config->user = $2;
+		}
+		;
 device		: DEVICE STRING optnl '{' optnl srcspec_l optnl '}'
 		{
 			struct device *src = calloc(1, sizeof(*src));
@@ -121,6 +127,7 @@ parse_config(char *filename) {
 		err(1, "calloc");
 	}
 	TAILQ_INIT(&config->devices);
+	config->user = "_dhcp";
 
 	yyin = file.stream;
 	yyparse();

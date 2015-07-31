@@ -25,6 +25,7 @@ struct device {
 
 struct config {
 	TAILQ_HEAD(, device) devices;
+	char *user;
 };
 
 typedef struct {

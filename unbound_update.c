@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <imsg.h>
 
+#include "dnsfoo.h"
+#include "config.h"
 #include "unbound_update.h"
 
 #define MAX_NAME_SERVERS 5
@@ -101,12 +103,15 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 }
 
 int
-unbound_update_loop(int msg_fd) {
+unbound_update_loop(int msg_fd, struct config *config) {
 	struct imsgbuf ibuf;
 	struct kevent ev;
 	int kq;
 
 	setproctitle("unbound update loop");
+
+	if (!privdrop(config->user))
+		err(1, "privdrop");
 
 	imsg_init(&ibuf, msg_fd);
 

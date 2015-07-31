@@ -12,6 +12,7 @@
 #include <sys/uio.h>
 #include <imsg.h>
 
+#include "dnsfoo.h"
 #include "config.h"
 #include "unbound_update.h"
 
@@ -115,7 +116,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
 }
 
 int
-serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound) {
+serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) {
 	struct kevent ev;
 	struct unbound_update_msg msg;
 	struct imsgbuf ibuf;
@@ -124,9 +125,12 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound) {
 	char *imsgdata;
 	ssize_t n, datalen;
 
-	tame(TAME_MALLOC|TAME_RPATH);
+	setproctitle("server repository");
 
-	setproctitle("conflict resolution");
+	if (!privdrop(config->user))
+		err(1, "privdrop");
+
+	tame(TAME_MALLOC|TAME_RPATH);
 
 	TAILQ_INIT(&devices);
 	imsg_init(&ibuf, msg_fd_handlers);

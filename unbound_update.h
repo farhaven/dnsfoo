@@ -20,6 +20,6 @@ struct unbound_update_msg {
 char *unbound_update_msg_pack(struct unbound_update_msg *, size_t *);
 int unbound_update_msg_unpack(struct unbound_update_msg *, char *, size_t);
 int unbound_update_msg_append_ns(struct unbound_update_msg *, const char *);
-int unbound_update_loop(int);
+int unbound_update_loop(int, struct config*);
 void unbound_update_msg_cleanup(struct unbound_update_msg *);
 #endif /* _UNBOUND_UPDATE_H */
