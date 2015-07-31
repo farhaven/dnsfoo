@@ -81,8 +81,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 				continue;
 		}
 
-		idata = calloc(1, datalen);
-		if (idata == NULL) {
+		if ((idata = calloc(1, datalen)) == NULL) {
 			err(1, "calloc");
 		}
 		memcpy(idata, imsg.data, datalen);
