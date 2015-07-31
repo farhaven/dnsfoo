@@ -29,14 +29,14 @@ struct srv_device {
 	char *name;
 };
 
-TAILQ_HEAD(, srv_device) devices;
+typedef TAILQ_HEAD(, srv_device) srv_devlist;
 
 void
-serverrepo_set_source(struct unbound_update_msg *msg) {
+serverrepo_set_source(struct unbound_update_msg *msg, srv_devlist *devices) {
 	struct srv_device *dev;
 	struct srv_source *src;
 
-	TAILQ_FOREACH(dev, &devices, entry) {
+	TAILQ_FOREACH(dev, devices, entry) {
 		if (!strcmp(dev->name, msg->device))
 			break;
 	}
@@ -45,7 +45,7 @@ serverrepo_set_source(struct unbound_update_msg *msg) {
 			err(1, "calloc");
 		dev->name = strdup(msg->device);
 		TAILQ_INIT(&dev->sources);
-		TAILQ_INSERT_TAIL(&devices, dev, entry);
+		TAILQ_INSERT_TAIL(devices, dev, entry);
 	}
 
 	TAILQ_FOREACH(src, &dev->sources, entry) {
@@ -70,20 +70,20 @@ serverrepo_set_source(struct unbound_update_msg *msg) {
 }
 
 void
-serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
+serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd, srv_devlist *devices) {
 	struct unbound_update_msg msg_out;
 	struct srv_device *dev;
 	struct imsgbuf ibuf;
 	char *msgdata;
 	size_t msglen;
 
-	serverrepo_set_source(msg_in);
+	serverrepo_set_source(msg_in, devices);
 
 	memset(&msg_out, 0x00, sizeof(msg_out));
 	msg_out.type = msg_in->type;
 	msg_out.device = strdup(msg_in->device);
 
-	TAILQ_FOREACH(dev, &devices, entry) {
+	TAILQ_FOREACH(dev, devices, entry) {
 		struct srv_source *src;
 		if (strcmp(dev->name, msg_in->device))
 			continue;
@@ -117,6 +117,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
 
 int
 serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) {
+	srv_devlist devices;
 	struct kevent ev;
 	struct unbound_update_msg msg;
 	struct imsgbuf ibuf;
@@ -169,7 +170,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 				err(1, "failed to unpack update msg");
 			free(imsgdata);
 
-			serverrepo_handle_msg(&msg, msg_fd_unbound);
+			serverrepo_handle_msg(&msg, msg_fd_unbound, &devices);
 			unbound_update_msg_cleanup(&msg);
 		}
 
