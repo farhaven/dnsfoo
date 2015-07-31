@@ -95,7 +95,6 @@ serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
 
 	if ((msgdata = unbound_update_msg_pack(&msg_out, &msglen)) == NULL)
 		err(1, "failed to pack unbound update message");
-	unbound_update_msg_cleanup(&msg_out);
 
 	imsg_init(&ibuf, msgfd);
 	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
@@ -104,6 +103,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd) {
 
 	fprintf(stderr, "dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
 	        msg_out.device, msg_out.nslen, msg_out.type);
+	unbound_update_msg_cleanup(&msg_out);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0)
