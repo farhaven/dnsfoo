@@ -4,10 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include <sys/types.h>
 #include <sys/event.h>
-#include <sys/time.h>
-#include <sys/queue.h>
 #include <sys/uio.h>
 #include <imsg.h>
 
