@@ -16,7 +16,7 @@ rtadv		return RTADV;
 \{		return '{';
 \}		return '}';
 \"		; /* XXX */
-[[:alnum:]/.-]+	yylval.v.string=strdup(yytext); return STRING;
+[[:alnum:]/.-_]+	yylval.v.string=strdup(yytext); return STRING;
 \n		yylval.lineno++; return '\n';
 [ \t]		;
 %%
