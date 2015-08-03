@@ -8,7 +8,10 @@ found.
 
 Building
 --------
-If you're running OpenBSD, a simple `make` should do the trick.
+If you're running a recent OpenBSD -current which has the `tame()` system call,
+a simple `make` should do the trick. If your system does not support `tame()`,
+you can simply comment out all calls to it, as well as the `#include
+<sys/tame.h>` directives.
 
 `dnsfoo` requires a few things that are specific to OpenBSD, such as the `imsg`
 interface. If you port over `libutil`, it shouldn't be too hard to get working.
@@ -19,6 +22,8 @@ Configuration
 Configuration information is taken from `dnsfoo.conf` in the current directory.
 This is an example:
 
+    user "_dhcp"
+
     device "trunk0" {
         dhcpv4 "/var/db/dhclient.leases.trunk0"
         dhcpv4 "/tmp/dnslease"
@@ -26,7 +31,9 @@ This is an example:
     }
 
 `device` statements group DNS information sources for conflict resolution. You
-can use more than one source statement if you want
+can use more than one source statement if you want. `user` specifies the user
+to drop priviledges to. This user must be able to control unbound with
+`unbound-control`. The default is `_dhcp`.
 
 Usage
 -----
