@@ -82,26 +82,17 @@ And observe unbounds forwarders:
     $ unbound-control forward
     2001:470:7193:10::1 2001:470:7193:6::1
 
-Notes
------
+Notes / Missing Stuff
+---------------------
 ### DNS Sources
-* DHCPv4 answers
-	* from dhclient lease files
-	* notification via kqueue on lease file inodes
 * DHCPv6 answers
 	* no lease files, at least for wide-dhcpv6
 	* call a script from wide-dhcp6c to write nameservers to a socket?
 * Router advertisements
-	* Get advertisement packets from ICMPv6 raw socket
 	* (re)-check if interface is configured for RA accept
 
-### Design
-* Multiple processes:
-	* Event loop (one per source/device?)
-	* Information source parser, short lived, spawned on demand by event loops
-		* tame()'d
-	* Configuration repository
-		* merge (conflicting) information from multiple sources
-	* Unbound updater
-		* calls unbound-control forward <ns1> <ns2> ...
-* Use imsg_compose(3) for communication
+### Handling of DNS from multiple sources
+* What do we do if we go from a network that has RDNSS to one that doesn't?
+	* The DNS info from the RDNSS network won't be overwritten
+	* We can't use "lost the default route" as a signal to flush the list of DNS
+	  (might come _after_ the new nameservers came in)
