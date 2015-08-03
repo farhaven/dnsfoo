@@ -110,7 +110,7 @@ unbound_update_loop(int msg_fd, struct config *config) {
 
 	setproctitle("unbound update loop");
 
-	if (!privdrop(config->user))
+	if (!privdrop(config))
 		err(1, "privdrop");
 
 	imsg_init(&ibuf, msg_fd);

@@ -1,5 +1,6 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
+#include <pwd.h>
 #include <sys/queue.h>
 
 enum srctype {
@@ -25,7 +26,7 @@ struct device {
 
 struct config {
 	TAILQ_HEAD(, device) devices;
-	char *user;
+	struct passwd *pw;
 };
 
 typedef struct {

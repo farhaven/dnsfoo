@@ -44,7 +44,8 @@ grammar	:
 		;
 
 user		: USER STRING {
-			config->user = $2;
+			if ((config->pw = getpwnam($2)) == NULL)
+					errx(1, "Can't find user %s", $2);
 		}
 		;
 device		: DEVICE STRING optnl '{' optnl srcspec_l optnl '}'
@@ -127,12 +128,15 @@ parse_config(char *filename) {
 		err(1, "calloc");
 	}
 	TAILQ_INIT(&config->devices);
-	config->user = "_dhcp";
 
 	yyin = file.stream;
 	yyparse();
 	fclose(file.stream);
 	free(file.name);
+
+	if ((config->pw == NULL) && ((config->pw = getpwnam("_dhcp")) == NULL)) {
+		errx(1, "Can't find user _dhcp");
+	}
 
 	if (file.errors == 0)
 		return config;

@@ -24,15 +24,12 @@ struct fileinfo {
 };
 
 int
-privdrop(char *name) {
+privdrop(struct config *conf) {
 	gid_t grouplist[NGROUPS_MAX];
 	int ngroups = NGROUPS_MAX;
-	struct passwd *pw;
+	struct passwd *pw = conf->pw;
 
-	if ((pw = getpwnam(name)) == NULL)
-		return 0;
-
-	if (getgrouplist(name, pw->pw_gid, grouplist, &ngroups) < 0)
+	if (getgrouplist(pw->pw_name, pw->pw_gid, grouplist, &ngroups) < 0)
 		return 0;
 
 	if (setgroups(ngroups, grouplist) < 0)
@@ -55,7 +52,7 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd, struct config *config) {
 
 	setproctitle("event loop");
 
-	if (!privdrop(config->user))
+	if (!privdrop(config))
 		err(1, "privdrop");
 
 	if ((kq = kqueue()) < 0) {
@@ -200,7 +197,7 @@ main(void) {
 		nchildren++;
 	}
 
-	privdrop(config->user);
+	privdrop(config);
 
 	close(msg_fds_unbound[0]);
 	close(msg_fds_unbound[1]);
