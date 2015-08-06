@@ -88,8 +88,6 @@ Notes / Missing Stuff
 * DHCPv6 answers
 	* no lease files, at least for wide-dhcpv6
 	* call a script from wide-dhcp6c to write nameservers to a socket?
-* Router advertisements
-	* (re)-check if interface is configured for RA accept
 
 ### Handling of DNS from multiple sources
 * What do we do if we go from a network that has RDNSS to one that doesn't?
