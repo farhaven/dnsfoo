@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <sys/ioctl.h>
 #include <sys/event.h>
 #include <sys/uio.h>
 #include <imsg.h>
@@ -108,10 +109,15 @@ const char* ra_names[] = {
 };
 #endif
 
+#ifndef MIN
+#define MIN(a, b) ((a < b)? a: b)
+#endif
+
 void
 rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	/* TODO: don't ignore option life time */
 	char *data = ri->v.rtadv.msghdr.msg_iov[0].iov_base;
+	struct ifreq req;
 	struct imsgbuf ibuf;
 	struct unbound_update_msg msg;
 	struct nd_opt_hdr *opthdr;
@@ -125,6 +131,16 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	fprintf(stderr, "rtadv: len: %ld from %s\n", len,
 	        inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
 #endif
+
+	memset(&req, 0x00, sizeof(req));
+	memcpy(&req.ifr_name, ri->device, MIN(strlen(ri->device), IFNAMSIZ));
+	ioctl(ri->sock, SIOCGIFXFLAGS, &req);
+	if (req.ifr_flags & ~IFXF_AUTOCONF6) {
+		fprintf(stderr, "rtadv: autoconf disabled on dev \"%s\"\n", req.ifr_name);
+		return;
+	}
+
+	tame(TAME_MALLOC|TAME_INET|TAME_ABORT);
 
 	memset(&msg, 0x00, sizeof(msg));
 	for (pkt_off = sizeof(struct nd_router_advert);
@@ -196,8 +212,6 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	ssize_t len;
 	int ifindex = 0;
 	int *hlimp = NULL;
-
-	tame(TAME_MALLOC|TAME_INET);
 
 	setproctitle("router advertisement handler");
 
