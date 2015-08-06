@@ -2,6 +2,8 @@
 #include <err.h>
 #include <stdio.h>
 
+#include <sys/socket.h>
+#include <net/if.h>
 #include <sys/queue.h>
 
 #include "config.h"
@@ -50,7 +52,16 @@ user		: USER STRING {
 		;
 device		: DEVICE STRING optnl '{' optnl srcspec_l optnl '}'
 		{
-			struct device *src = calloc(1, sizeof(*src));
+			struct device *src;
+			if (strlen($2) > IFNAMSIZ) {
+				char *tmp;
+				asprintf(&tmp, "Device name '%s' too long (maximum: %d, is: %ld)",
+				         $2, IFNAMSIZ, strlen($2));
+				yyerror(tmp);
+				free(tmp);
+				YYERROR;
+			}
+			src = calloc(1, sizeof(*src));
 			if (src == NULL) {
 				yyerror("Can't alloc space for device");
 				YYERROR;
