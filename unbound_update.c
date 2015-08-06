@@ -94,8 +94,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 			errx(1, "failed to unpack update msg");
 		free(idata);
 #ifndef NDEBUG
-		fprintf(stderr, "device=\"%s\"\n", msg.device);
-		fprintf(stderr, "nslen =%ld\n", msg.nslen);
+		fprintf(stderr, "device=\"%s\", nslen=%ld lifetime=%u\n", msg.device, msg.nslen, msg.lifetime);
 #endif
 		unbound_update_dispatch(&msg);
 		unbound_update_msg_cleanup(&msg);
@@ -154,6 +153,11 @@ unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
 	memcpy(p + *len, &msg->nslen, sizeof(msg->nslen));
 	*len += sizeof(msg->nslen);
 
+	if ((p = realloc(p, *len + sizeof(msg->lifetime))) == NULL)
+		goto exit_fail;
+	memcpy(p + *len, &msg->lifetime, sizeof(msg->lifetime));
+	*len += sizeof(msg->lifetime);
+
 	if ((p = realloc(p, *len + strlen(msg->device) + 1)) == NULL)
 		goto exit_fail;
 	(void) strlcpy(p + *len, msg->device, strlen(msg->device) + 1);
@@ -191,6 +195,13 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 	}
 	memcpy(&msg->nslen, src + off, sizeof(msg->nslen));
 	off += sizeof(msg->nslen);
+
+	if (srclen - off < sizeof(msg->lifetime)) {
+		warnx("tried to unpack short update msg (%ld < %ld)", srclen - off, sizeof(msg->lifetime));
+		goto exit_fail;
+	}
+	memcpy(&msg->lifetime, src + off, sizeof(msg->lifetime));
+	off += sizeof(msg->lifetime);
 
 	len = srclen - off;
 	if (len < strnlen(src + off, len) + 1) {

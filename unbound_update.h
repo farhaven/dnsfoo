@@ -6,9 +6,14 @@ enum unbound_msg_type {
 	MSG_UNBOUND_UPDATE
 };
 
+/* Packed message layout:
+ * | type | nslen | lifetime | device | nameservers |
+ */
 struct unbound_update_msg {
 	/* Source type this message originated from */
 	enum srctype type;
+	/* update life time, ~0 means infinity */
+	uint32_t lifetime;
 	/* Device these name servers come from */
 	char *device;
 	/* Total length of the name server list in this message */

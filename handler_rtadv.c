@@ -143,6 +143,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	tame(TAME_MALLOC|TAME_INET|TAME_ABORT);
 
 	memset(&msg, 0x00, sizeof(msg));
+	msg.lifetime = ~0;
 	for (pkt_off = sizeof(struct nd_router_advert);
 	     pkt_off < len; pkt_off += opthdr->nd_opt_len * 8) {
 		int optlen;
@@ -162,6 +163,8 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		        optlen, sizeof(opthdr),
 		        ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
 #endif
+		msg.lifetime = ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime);
+		fprintf(stderr, "lt=%u\n", msg.lifetime);
 
 		optlen -= sizeof(opthdr);
 		opt = data + pkt_off + sizeof(opthdr);

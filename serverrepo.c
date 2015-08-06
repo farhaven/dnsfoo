@@ -82,6 +82,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd, srv_devlist 
 	memset(&msg_out, 0x00, sizeof(msg_out));
 	msg_out.type = msg_in->type;
 	msg_out.device = strdup(msg_in->device);
+	msg_out.lifetime = msg_in->lifetime;
 
 	TAILQ_FOREACH(dev, devices, entry) {
 		struct srv_source *src;
