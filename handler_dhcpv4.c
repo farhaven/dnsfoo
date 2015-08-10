@@ -17,7 +17,7 @@
 
 void
 dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
-	const char *match[] = { "option domain-name-servers", "option dhcp-renewal-time" };
+	const char *match[] = { "option domain-name-servers", "option dhcp-lease-time" };
 	struct handler_info *info = (struct handler_info*) udata;
 	struct unbound_update_msg msg;
 	struct imsgbuf ibuf;

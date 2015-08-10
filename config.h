@@ -5,7 +5,8 @@
 
 enum srctype {
 	SRC_DHCPV4,
-	SRC_RTADV
+	SRC_RTADV,
+	SRC_UNKNOWN
 };
 
 struct srcspec {

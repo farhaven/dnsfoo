@@ -19,8 +19,9 @@
 struct srv_source {
 	TAILQ_ENTRY(srv_source) entry;
 	enum srctype type;
-	char *ns;
 	size_t nslen;
+	time_t expiry;
+	char *ns;
 };
 
 struct srv_device {
@@ -29,14 +30,59 @@ struct srv_device {
 	char *name;
 };
 
-typedef TAILQ_HEAD(, srv_device) srv_devlist;
+struct srv_devlist {
+	TAILQ_HEAD(, srv_device) devices;
+	time_t expiry;
+};
 
 void
-serverrepo_set_source(struct unbound_update_msg *msg, srv_devlist *devices) {
+serverrepo_update_unbound(int msgfd, struct srv_devlist *devices) {
+	struct srv_device *dev;
+	struct unbound_update_msg msg;
+	struct imsgbuf ibuf;
+	char *msgdata;
+	size_t msglen;
+
+	memset(&msg, 0x00, sizeof(msg));
+	msg.type = SRC_UNKNOWN;
+	msg.device = strdup("unknown");
+
+	TAILQ_FOREACH(dev, &devices->devices, entry) {
+		struct srv_source *src;
+		TAILQ_FOREACH(src, &dev->sources, entry) {
+			if ((msg.ns = realloc(msg.ns, msg.nslen + src->nslen)) == NULL)
+				err(1, "realloc");
+			memcpy(msg.ns + msg.nslen, src->ns, src->nslen);
+			msg.nslen += src->nslen;
+		}
+	}
+
+	if ((msgdata = unbound_update_msg_pack(&msg, &msglen)) == NULL)
+		err(1, "failed to pack unbound update message");
+
+	imsg_init(&ibuf, msgfd);
+	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
+		err(1, "imsg_compose");
+	free(msgdata);
+
+	fprintf(stderr, "dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
+	        msg.device, msg.nslen, msg.type);
+	unbound_update_msg_cleanup(&msg);
+
+	do {
+		if (msgbuf_write(&ibuf.w) > 0)
+			return;
+	} while (errno == EAGAIN);
+
+	err(1, "msgbuf_write");
+}
+
+void
+serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd, struct srv_devlist *devices) {
 	struct srv_device *dev;
 	struct srv_source *src;
 
-	TAILQ_FOREACH(dev, devices, entry) {
+	TAILQ_FOREACH(dev, &devices->devices, entry) {
 		if (!strcmp(dev->name, msg->device))
 			break;
 	}
@@ -45,7 +91,7 @@ serverrepo_set_source(struct unbound_update_msg *msg, srv_devlist *devices) {
 			err(1, "calloc");
 		dev->name = strdup(msg->device);
 		TAILQ_INIT(&dev->sources);
-		TAILQ_INSERT_TAIL(devices, dev, entry);
+		TAILQ_INSERT_TAIL(&devices->devices, dev, entry);
 	}
 
 	TAILQ_FOREACH(src, &dev->sources, entry) {
@@ -61,69 +107,82 @@ serverrepo_set_source(struct unbound_update_msg *msg, srv_devlist *devices) {
 		err(1, "calloc");
 	src->type = msg->type;
 	src->nslen = msg->nslen;
+	if (msg->lifetime == ~0)
+		src->expiry = (time_t) -1;
+	else
+		src->expiry = time(NULL) + msg->lifetime;
 	if ((src->ns = calloc(1, msg->nslen)) == NULL)
 		err(1, "calloc");
 	memcpy(src->ns, msg->ns, msg->nslen);
 	TAILQ_INSERT_TAIL(&dev->sources, src, entry);
 
+	fprintf(stderr, "new expiry: %lld (%d)\n", src->expiry, src->expiry == (time_t) -1);
+
+	if ((src->expiry != (time_t) -1) &&
+	    ((devices->expiry == (time_t) -1) ||
+	     (devices->expiry > src->expiry))) {
+		devices->expiry = src->expiry;
+		fprintf(stderr, "new expiry: %lld seconds\n", devices->expiry);
+	}
+
 	fprintf(stderr, "dev=%p src=%p\n", (void*) dev, (void*) src);
+
+	serverrepo_update_unbound(msgfd, devices);
 }
 
 void
-serverrepo_handle_msg(struct unbound_update_msg *msg_in, int msgfd, srv_devlist *devices) {
-	struct unbound_update_msg msg_out;
-	struct srv_device *dev;
-	struct imsgbuf ibuf;
-	char *msgdata;
-	size_t msglen;
+serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
+	struct srv_device *dev = NULL;
+	struct srv_source *src = NULL;
+	time_t now = time(NULL);
 
-	serverrepo_set_source(msg_in, devices);
+	fprintf(stderr, "Handling timeout\n");
 
-	memset(&msg_out, 0x00, sizeof(msg_out));
-	msg_out.type = msg_in->type;
-	msg_out.device = strdup(msg_in->device);
-	msg_out.lifetime = msg_in->lifetime;
+	for (;;) {
+		TAILQ_FOREACH(dev, &devs->devices, entry) {
+			TAILQ_FOREACH(src, &dev->sources, entry) {
+				if (src->expiry <= now)
+					break;
+			}
+			if (src != NULL)
+				break;
+		}
+		if (src == NULL)
+			break;
+		fprintf(stderr, "expired entry: %p, expiry=%lld\n", (void*) src, src->expiry);
+		TAILQ_REMOVE(&dev->sources, src, entry);
+		free(src->ns);
+		free(src);
+	}
 
-	TAILQ_FOREACH(dev, devices, entry) {
-		struct srv_source *src;
-		if (strcmp(dev->name, msg_in->device))
-			continue;
+	/* Update next expiry */
+	devs->expiry = (time_t) -1;
+	TAILQ_FOREACH(dev, &devs->devices, entry) {
+		fprintf(stderr, "checking device '%s' %d\n", dev->name, TAILQ_EMPTY(&dev->sources));
 		TAILQ_FOREACH(src, &dev->sources, entry) {
-			if ((msg_out.ns = realloc(msg_out.ns, msg_out.nslen + src->nslen)) == NULL)
-				err(1, "realloc");
-			memcpy(msg_out.ns + msg_out.nslen, src->ns, src->nslen);
-			msg_out.nslen += src->nslen;
+			fprintf(stderr, "src->expiry=%lld, dev->expiry=%lld, %d\n",
+			        src->expiry, devs->expiry, src->expiry < devs->expiry);
+			if (src->expiry == (time_t) -1)
+				continue;
+
+			if ((src->expiry < devs->expiry) || (devs->expiry == (time_t) -1))
+				devs->expiry = src->expiry;
 		}
 	}
 
-	if ((msgdata = unbound_update_msg_pack(&msg_out, &msglen)) == NULL)
-		err(1, "failed to pack unbound update message");
+	fprintf(stderr, "done with timeout handling, new expiry=%lld\n", devs->expiry);
 
-	imsg_init(&ibuf, msgfd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
-		err(1, "imsg_compose");
-	free(msgdata);
-
-	fprintf(stderr, "dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
-	        msg_out.device, msg_out.nslen, msg_out.type);
-	unbound_update_msg_cleanup(&msg_out);
-
-	do {
-		if (msgbuf_write(&ibuf.w) > 0)
-			return;
-	} while (errno == EAGAIN);
-
-	err(1, "msgbuf_write");
+	serverrepo_update_unbound(msg_fd, devs);
 }
 
 int
 serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) {
-	srv_devlist devices;
+	struct srv_devlist devices;
 	struct kevent ev;
 	struct unbound_update_msg msg;
 	struct imsgbuf ibuf;
 	struct imsg imsg;
-	int kq;
+	int kq, ret;
 	char *imsgdata;
 	ssize_t n, datalen;
 
@@ -134,7 +193,8 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 
 	tame(TAME_MALLOC|TAME_RPATH);
 
-	TAILQ_INIT(&devices);
+	TAILQ_INIT(&devices.devices);
+	devices.expiry = (time_t) -1;
 	imsg_init(&ibuf, msg_fd_handlers);
 
 	if ((kq = kqueue()) < 0)
@@ -146,36 +206,50 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 		err(1, "kevent");
 
 	for (;;) {
-		if (kevent(kq, NULL, 0, &ev, 1, NULL) < 1)
-			err(1, "kevent");
+		if (devices.expiry != (time_t) -1) {
+			struct timespec t = {devices.expiry - time(NULL)};
+			ret = kevent(kq, NULL, 0, &ev, 1, &t);
+		} else
+			ret = kevent(kq, NULL, 0, &ev, 1, NULL);
 
-		fprintf(stderr, "got event on FD %d\n", (int) ev.ident);
+		switch (ret) {
+			case 0:
+				/* Timeout */
+				serverrepo_handle_timeout(msg_fd_unbound, &devices);
+				break;
+			case -1:
+				err(1, "kevent");
+				break;
+			case 1:
+				if ((n = imsg_read(&ibuf)) == -1 || n == 0)
+					err(1, "imsg_read");
 
-		if ((n = imsg_read(&ibuf)) == -1 || n == 0)
-			err(1, "imsg_read");
+				while ((n = imsg_get(&ibuf, &imsg) > 0)) {
+					datalen = imsg.hdr.len - IMSG_HEADER_SIZE;
+					fprintf(stderr, "got %ld bytes of payload\n", datalen);
 
-		while ((n = imsg_get(&ibuf, &imsg) > 0)) {
-			datalen = imsg.hdr.len - IMSG_HEADER_SIZE;
-			fprintf(stderr, "got %ld bytes of payload\n", datalen);
+					if (imsg.hdr.type != MSG_UNBOUND_UPDATE)
+						errx(1, "unknown IMSG received: %d", imsg.hdr.type);
 
-			if (imsg.hdr.type != MSG_UNBOUND_UPDATE)
-				errx(1, "unknown IMSG received: %d", imsg.hdr.type);
+					if ((imsgdata = calloc(1, datalen)) == NULL)
+						err(1, "calloc");
+					memcpy(imsgdata, imsg.data, datalen);
+					imsgdata[datalen - 1] = '\0';
+					imsg_free(&imsg);
 
-			if ((imsgdata = calloc(1, datalen)) == NULL)
-				err(1, "calloc");
-			memcpy(imsgdata, imsg.data, datalen);
-			imsgdata[datalen - 1] = '\0';
-			imsg_free(&imsg);
+					if (!unbound_update_msg_unpack(&msg, imsgdata, datalen))
+						err(1, "failed to unpack update msg");
+					free(imsgdata);
 
-			if (!unbound_update_msg_unpack(&msg, imsgdata, datalen))
-				err(1, "failed to unpack update msg");
-			free(imsgdata);
-
-			serverrepo_handle_msg(&msg, msg_fd_unbound, &devices);
-			unbound_update_msg_cleanup(&msg);
+					serverrepo_handle_msg(&msg, msg_fd_unbound, &devices);
+					unbound_update_msg_cleanup(&msg);
+				}
+				if (n == -1)
+					err(1, "imsg_get");
+				break;
+			default:
+				errx(1, "unexpected number of events: %d", ret);
+				break;
 		}
-
-		if (n == -1)
-			err(1, "imsg_get");
 	}
 }
