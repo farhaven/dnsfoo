@@ -24,21 +24,19 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 
 	memset(params, 0, sizeof (params));
 	params[0] = "unbound-control";
+	params[1] = "forward_remove";
+	params[2] = ".";
 	if (msg->nslen > 0) {
+		size_t nslen = msg->nslen;
 		params[1] = "forward_add";
-		params[2] = ".";
 		srv = &params[3];
 		p = msg->ns;
-		while ((numns < MAX_NAME_SERVERS) && (msg->nslen > 0)) {
+		while ((numns < MAX_NAME_SERVERS) && (nslen > 0)) {
 			if ((asprintf(&srv[numns++], "%s", p)) == -1)
 				err(1, "asprintf");
-			msg->nslen -= strlen(p) + 1;
+			nslen -= strlen(p) + 1;
 			p += strlen(p) + 1;
 		}
-	} else {
-		params[1] = "forward_remove";
-		params[2] = ".";
-		srv = &params[3];
 	}
 
 	switch ((child = fork())) {
