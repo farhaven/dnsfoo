@@ -17,21 +17,28 @@
 
 void
 unbound_update_dispatch(struct unbound_update_msg *msg) {
-	char *params[MAX_NAME_SERVERS + 3]; /* unbound-control, forward, final NULL */
+	char *params[MAX_NAME_SERVERS + 4]; /* unbound-control, forward_{add, remove}, '.', final NULL */
 	char *p, **srv;
 	int numns = 0;
 	pid_t child;
 
 	memset(params, 0, sizeof (params));
 	params[0] = "unbound-control";
-	params[1] = "forward";
-	srv = &params[2];
-	p = msg->ns;
-	while ((numns < MAX_NAME_SERVERS) && (msg->nslen > 0)) {
-		if ((asprintf(&srv[numns++], "%s", p)) == -1)
-			err(1, "asprintf");
-		msg->nslen -= strlen(p) + 1;
-		p += strlen(p) + 1;
+	if (msg->nslen > 0) {
+		params[1] = "forward_add";
+		params[2] = ".";
+		srv = &params[3];
+		p = msg->ns;
+		while ((numns < MAX_NAME_SERVERS) && (msg->nslen > 0)) {
+			if ((asprintf(&srv[numns++], "%s", p)) == -1)
+				err(1, "asprintf");
+			msg->nslen -= strlen(p) + 1;
+			p += strlen(p) + 1;
+		}
+	} else {
+		params[1] = "forward_remove";
+		params[2] = ".";
+		srv = &params[3];
 	}
 
 	switch ((child = fork())) {
@@ -48,10 +55,12 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 				err(1, "waitpid");
 	}
 
-	for (numns = 0; numns < MAX_NAME_SERVERS; numns++) {
-		if (!srv[numns])
-			break;
-		free(srv[numns]);
+	if (msg->nslen > 0) {
+		for (numns = 0; numns < MAX_NAME_SERVERS; numns++) {
+			if (!srv[numns])
+				break;
+			free(srv[numns]);
+		}
 	}
 }
 
