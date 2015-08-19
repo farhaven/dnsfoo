@@ -145,7 +145,7 @@ char *
 unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
 	char *p = NULL;
 
-	if ((msg->device == NULL) || (msg->ns == NULL)) {
+	if (msg->device == NULL) {
 		warnx("tried to pack an incomplete unbound update msg");
 		goto exit_fail;
 	}
@@ -170,10 +170,12 @@ unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
 	(void) strlcpy(p + *len, msg->device, strlen(msg->device) + 1);
 	*len += strlen(msg->device) + 1;
 
-	if ((p = realloc(p, *len + msg->nslen)) == NULL)
-		goto exit_fail;
-	memcpy(p + *len, msg->ns, msg->nslen);
-	*len += msg->nslen;
+	if (msg->ns != NULL) {
+		if ((p = realloc(p, *len + msg->nslen)) == NULL)
+			goto exit_fail;
+		memcpy(p + *len, msg->ns, msg->nslen);
+		*len += msg->nslen;
+	}
 
 	return p;
 
@@ -220,15 +222,18 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 	(void) strlcpy(msg->device, src + off, strnlen(src + off, len) + 1);
 	off += strlen(msg->device) + 1;
 
-	if (srclen - off < 1) {
-		warnx("tried to unpack short update msg (%ld - %ld < 1)", srclen, off);
-		goto exit_fail;
-	}
+	if (msg->nslen > 0) {
+		if (srclen - off < 1) {
+			warnx("tried to unpack short update msg (%ld - %ld < 1), nslen = %ld", srclen, off, msg->nslen);
+			goto exit_fail;
+		}
 
-	len = srclen - off;
-	if ((msg->ns = calloc(1, len)) == NULL)
-		goto exit_fail;
-	memcpy(msg->ns, src + off, len);
+		len = srclen - off;
+		if ((msg->ns = calloc(1, len)) == NULL)
+			goto exit_fail;
+		memcpy(msg->ns, src + off, len);
+	} else
+		msg->ns = NULL;
 
 	return 1;
 
