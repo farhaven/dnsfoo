@@ -140,7 +140,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		return;
 	}
 
-	tame(TAME_MALLOC|TAME_INET|TAME_ABORT);
+	tame(TAME_MALLOC|TAME_INET|TAME_ABORT, NULL);
 
 	memset(&msg, 0x00, sizeof(msg));
 	msg.lifetime = ~0;

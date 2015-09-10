@@ -26,7 +26,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	FILE *f;
 	size_t len;
 
-	tame(TAME_MALLOC | TAME_RPATH);
+	tame(TAME_MALLOC | TAME_RPATH, NULL);
 
 	setproctitle("dhcpv4 lease parser");
 

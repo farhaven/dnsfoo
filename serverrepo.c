@@ -191,7 +191,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 	if (!privdrop(config))
 		err(1, "privdrop");
 
-	tame(TAME_MALLOC|TAME_RPATH);
+	tame(TAME_MALLOC|TAME_RPATH, NULL);
 
 	TAILQ_INIT(&devices.devices);
 	devices.expiry = (time_t) -1;
