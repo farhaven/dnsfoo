@@ -62,13 +62,14 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 					continue;
 				if (!unbound_update_msg_append_ns(&msg, p))
 					err(1, "unbound_update_msg_append_ns");
-				fprintf(stderr, "appended %s to list of name servers, list is now %ld bytes\n", p, msg.nslen);
+				fprintf(stderr, "%llu: appended %s to list of name servers, list is now %ld bytes\n",
+				        time(NULL), p, msg.nslen);
 			}
 		} else if ((buf = strstr(data, match[1])) != NULL) {
 			/* Handle lifetime */
 			long long lifetime = strtonum(buf + strlen(match[1]), 0, INT32_MAX, &errstr);
 			if (errstr != NULL) {
-				warn("The life time is %s", errstr);
+				warn("%llu: The life time is %s", time(NULL), errstr);
 				goto exit_fail;
 			}
 			msg.lifetime = (uint32_t) lifetime;

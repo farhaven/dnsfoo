@@ -86,7 +86,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 			case MSG_UNBOUND_UPDATE:
 				break;
 			default:
-				warnx("unknown IMSG received: %d", imsg.hdr.type);
+				warnx("%llu: unknown IMSG received: %d", time(NULL), imsg.hdr.type);
 				continue;
 		}
 
@@ -101,7 +101,8 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 			errx(1, "failed to unpack update msg");
 		free(idata);
 #ifndef NDEBUG
-		fprintf(stderr, "device=\"%s\", nslen=%ld lifetime=%u\n", msg.device, msg.nslen, msg.lifetime);
+		fprintf(stderr, "%llu: device=\"%s\", nslen=%ld lifetime=%u\n",
+		        time(NULL), msg.device, msg.nslen, msg.lifetime);
 #endif
 		unbound_update_dispatch(&msg);
 		unbound_update_msg_cleanup(&msg);
@@ -146,7 +147,7 @@ unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
 	char *p = NULL;
 
 	if (msg->device == NULL) {
-		warnx("tried to pack an incomplete unbound update msg");
+		warnx("%llu: tried to pack an incomplete unbound update msg", time(NULL));
 		goto exit_fail;
 	}
 
@@ -191,7 +192,8 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 	memset(msg, 0x00, sizeof(*msg));
 
 	if (srclen < sizeof(msg->type)) {
-		warnx("tried to unpack short update msg (%ld < %ld)", srclen, sizeof(msg->nslen));
+		warnx("%llu: tried to unpack short update msg (%ld < %ld)",
+		      time(NULL), srclen, sizeof(msg->nslen));
 		goto exit_fail;
 	}
 	memcpy(&msg->type, src, sizeof(msg->type));
@@ -199,14 +201,16 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 
 	len = srclen - off;
 	if (len < sizeof(msg->nslen)) {
-		warnx("tried to unpack short update msg (%ld < %ld)", len, sizeof(msg->nslen));
+		warnx("%llu: tried to unpack short update msg (%ld < %ld)",
+		      time(NULL), len, sizeof(msg->nslen));
 		goto exit_fail;
 	}
 	memcpy(&msg->nslen, src + off, sizeof(msg->nslen));
 	off += sizeof(msg->nslen);
 
 	if (srclen - off < sizeof(msg->lifetime)) {
-		warnx("tried to unpack short update msg (%ld < %ld)", srclen - off, sizeof(msg->lifetime));
+		warnx("%llu: tried to unpack short update msg (%ld < %ld)",
+		      time(NULL), srclen - off, sizeof(msg->lifetime));
 		goto exit_fail;
 	}
 	memcpy(&msg->lifetime, src + off, sizeof(msg->lifetime));
@@ -214,7 +218,8 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 
 	len = srclen - off;
 	if (len < strnlen(src + off, len) + 1) {
-		warnx("tried to unpack short update msg (%ld < %ld)", len, strnlen(src + off, len) + 1);
+		warnx("%llu: tried to unpack short update msg (%ld < %ld)",
+		      time(NULL), len, strnlen(src + off, len) + 1);
 		goto exit_fail;
 	}
 	if ((msg->device = calloc(1, strnlen(src + off, len) + 1)) == NULL)
@@ -224,7 +229,8 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 
 	if (msg->nslen > 0) {
 		if (srclen - off < 1) {
-			warnx("tried to unpack short update msg (%ld - %ld < 1), nslen = %ld", srclen, off, msg->nslen);
+			warnx("%llu: tried to unpack short update msg (%ld - %ld < 1), nslen = %ld",
+			      time(NULL), srclen, off, msg->nslen);
 			goto exit_fail;
 		}
 

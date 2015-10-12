@@ -65,8 +65,8 @@ serverrepo_update_unbound(int msgfd, struct srv_devlist *devices) {
 		err(1, "imsg_compose");
 	free(msgdata);
 
-	fprintf(stderr, "dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
-	        msg.device, msg.nslen, msg.type);
+	fprintf(stderr, "%llu: dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
+	        time(NULL), msg.device, msg.nslen, msg.type);
 	unbound_update_msg_cleanup(&msg);
 
 	do {
@@ -116,16 +116,17 @@ serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd, struct srv_devl
 	memcpy(src->ns, msg->ns, msg->nslen);
 	TAILQ_INSERT_TAIL(&dev->sources, src, entry);
 
-	fprintf(stderr, "new expiry: %lld (%d)\n", src->expiry, src->expiry == (time_t) -1);
+	fprintf(stderr, "%llu: new expiry: %lld (%d)\n",
+	        time(NULL), src->expiry, src->expiry == (time_t) -1);
 
 	if ((src->expiry != (time_t) -1) &&
 	    ((devices->expiry == (time_t) -1) ||
 	     (devices->expiry > src->expiry))) {
 		devices->expiry = src->expiry;
-		fprintf(stderr, "new expiry: %lld seconds\n", devices->expiry);
+		fprintf(stderr, "%llu: new expiry: %lld seconds\n", time(NULL), devices->expiry);
 	}
 
-	fprintf(stderr, "dev=%p src=%p\n", (void*) dev, (void*) src);
+	fprintf(stderr, "%llu: dev=%p src=%p\n", time(NULL), (void*) dev, (void*) src);
 
 	serverrepo_update_unbound(msgfd, devices);
 }
@@ -136,7 +137,7 @@ serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
 	struct srv_source *src = NULL;
 	time_t now = time(NULL);
 
-	fprintf(stderr, "Handling timeout\n");
+	fprintf(stderr, "%llu: Handling timeout\n", time(NULL));
 
 	for (;;) {
 		TAILQ_FOREACH(dev, &devs->devices, entry) {
@@ -149,7 +150,8 @@ serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
 		}
 		if (src == NULL)
 			break;
-		fprintf(stderr, "expired entry: %p, expiry=%lld\n", (void*) src, src->expiry);
+		fprintf(stderr, "%llu: expired entry: %p, expiry=%lld\n",
+		        time(NULL), (void*) src, src->expiry);
 		TAILQ_REMOVE(&dev->sources, src, entry);
 		free(src->ns);
 		free(src);
@@ -158,10 +160,11 @@ serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
 	/* Update next expiry */
 	devs->expiry = (time_t) -1;
 	TAILQ_FOREACH(dev, &devs->devices, entry) {
-		fprintf(stderr, "checking device '%s' %d\n", dev->name, TAILQ_EMPTY(&dev->sources));
+		fprintf(stderr, "%llu: checking device '%s' %d\n",
+		        time(NULL), dev->name, TAILQ_EMPTY(&dev->sources));
 		TAILQ_FOREACH(src, &dev->sources, entry) {
-			fprintf(stderr, "src->expiry=%lld, dev->expiry=%lld, %d\n",
-			        src->expiry, devs->expiry, src->expiry < devs->expiry);
+			fprintf(stderr, "%llu: src->expiry=%lld, dev->expiry=%lld, %d\n",
+			        time(NULL), src->expiry, devs->expiry, src->expiry < devs->expiry);
 			if (src->expiry == (time_t) -1)
 				continue;
 
@@ -170,7 +173,8 @@ serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
 		}
 	}
 
-	fprintf(stderr, "done with timeout handling, new expiry=%lld\n", devs->expiry);
+	fprintf(stderr, "%llu: done with timeout handling, new expiry=%lld\n",
+	        time(NULL), devs->expiry);
 
 	serverrepo_update_unbound(msg_fd, devs);
 }
@@ -227,7 +231,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 
 				while ((n = imsg_get(&ibuf, &imsg) > 0)) {
 					datalen = imsg.hdr.len - IMSG_HEADER_SIZE;
-					fprintf(stderr, "got %ld bytes of payload\n", datalen);
+					fprintf(stderr, "%llu: got %ld bytes of payload\n", time(NULL), datalen);
 
 					if (imsg.hdr.type != MSG_UNBOUND_UPDATE)
 						errx(1, "unknown IMSG received: %d", imsg.hdr.type);

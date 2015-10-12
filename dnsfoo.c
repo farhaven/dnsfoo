@@ -91,11 +91,12 @@ eventloop(struct fileinfo *fi, ssize_t nfi, int msg_fd, struct config *config) {
 #ifndef NDEBUG
 		if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
 			continue;
-		fprintf(stderr, "Event handler %d exited with ", child);
+		fprintf(stderr, "%llu: Event handler %d exited with ", time(NULL), child);
 		if (WIFEXITED(status)) {
-			fprintf(stderr, "status %d\n", WEXITSTATUS(status));
+			fprintf(stderr, "%llu: status %d\n", time(NULL), WEXITSTATUS(status));
 		} else if (WIFSIGNALED(status)) {
-			fprintf(stderr, "signal %d%s\n",
+			fprintf(stderr, "%llu: signal %d%s\n",
+			        time(NULL),
 			        WTERMSIG(status),
 			        WCOREDUMP(status)? " (core dumped)": "");
 		}
@@ -140,8 +141,8 @@ main(void) {
 				errx(1, "unknown source type %d", src->type);
 			}
 			if (info->sock < 0) {
-				warn("failed to open %s handler for device %s",
-				     srcnames[info->type], info->device);
+				warn("%llu: failed to open %s handler for device %s",
+				     time(NULL), srcnames[info->type], info->device);
 				free(info->device);
 				free(info);
 				continue;
@@ -167,7 +168,7 @@ main(void) {
 		exit(unbound_update_loop(msg_fds_unbound[0], config));
 	else {
 #ifndef NDEBUG
-		fprintf(stderr, "unbound update loop forked (%d)\n", cpids[0]);
+		fprintf(stderr, "%llu: unbound update loop forked (%d)\n", time(NULL), cpids[0]);
 #endif
 		nchildren++;
 	}
@@ -179,7 +180,7 @@ main(void) {
 		exit(eventloop(fi, nfi, msg_fds_handlers[0], config));
 	else {
 #ifndef NDEBUG
-		fprintf(stderr, "event loop forked (%d)\n", cpids[1]);
+		fprintf(stderr, "%llu: event loop forked (%d)\n", time(NULL), cpids[1]);
 #endif
 		nchildren++;
 	}
@@ -192,7 +193,7 @@ main(void) {
 		exit(serverrepo_loop(msg_fds_handlers[1], msg_fds_unbound[1], config));
 	} else {
 #ifndef NDEBUG
-		fprintf(stderr, "server repo forked (%d)\n", cpids[2]);
+		fprintf(stderr, "%llu: server repo forked (%d)\n", time(NULL), cpids[2]);
 #endif
 		nchildren++;
 	}
@@ -219,7 +220,7 @@ main(void) {
 			which = "unknown";
 		}
 
-		fprintf(stderr, "Child %d (%s) exited with ", chld, which);
+		fprintf(stderr, "%llu: Child %d (%s) exited with ", time(NULL), chld, which);
 		if (WIFEXITED(status)) {
 			fprintf(stderr, "status %d\n", WEXITSTATUS(status));
 		} else if (WIFSIGNALED(status)) {

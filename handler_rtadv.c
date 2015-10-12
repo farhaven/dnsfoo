@@ -127,15 +127,16 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 #ifndef NDEBUG
 	struct sockaddr_in6 *from = (struct sockaddr_in6*) ri->v.rtadv.msghdr.msg_name;
 
-	fprintf(stderr, "rtadv: len: %ld from %s\n", len,
-	        inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
+	fprintf(stderr, "%llu: rtadv: len: %ld from %s\n", time(NULL),
+	        len, inet_ntop(AF_INET6, &from->sin6_addr, ntopbuf, INET6_ADDRSTRLEN));
 #endif
 
 	memset(&req, 0x00, sizeof(req));
 	memcpy(&req.ifr_name, ri->device, MIN(strlen(ri->device), IFNAMSIZ));
 	ioctl(ri->sock, SIOCGIFXFLAGS, &req);
 	if (req.ifr_flags & ~IFXF_AUTOCONF6) {
-		fprintf(stderr, "rtadv: autoconf disabled on dev \"%s\"\n", req.ifr_name);
+		fprintf(stderr, "%llu: rtadv: autoconf disabled on dev \"%s\"\n",
+		        time(NULL), req.ifr_name);
 		return;
 	}
 
@@ -164,7 +165,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		        ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime));
 #endif
 		msg.lifetime = ntohl(((struct nd_opt_rdnss*)opthdr)->nd_opt_rdnss_lifetime);
-		fprintf(stderr, "lt=%u\n", msg.lifetime);
+		fprintf(stderr, "%llu: lt=%u\n", time(NULL), msg.lifetime);
 
 		optlen -= sizeof(opthdr);
 		opt = data + pkt_off + sizeof(opthdr);
@@ -219,12 +220,13 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	setproctitle("router advertisement handler");
 
 	if ((len = recvmsg(fd, &ri->v.rtadv.msghdr, MSG_WAITALL)) < 0) {
-		warn("recvmsg");
+		warn("%llu: recvmsg", time(NULL));
 		return;
 	}
 
 	if (ri->v.rtadv.msghdr.msg_iovlen != 1) {
-		warn("unexpected number of I/O vectors: %d\n", ri->v.rtadv.msghdr.msg_iovlen);
+		warn("%llu: unexpected number of I/O vectors: %d\n",
+		     time(NULL), ri->v.rtadv.msghdr.msg_iovlen);
 		return;
 	}
 
@@ -245,7 +247,7 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	}
 
 	if (ifindex == 0) {
-		warn("can't get interface index");
+		warn("%llu: can't get interface index", time(NULL));
 		return;
 	}
 
@@ -254,36 +256,36 @@ rtadv_handle_update(int fd, int msgfd, void *udata) {
 	}
 
 	if (hlimp == NULL) {
-		warn("can't get receiving hop limit");
+		warn("%llu: can't get receiving hop limit", time(NULL));
 		return;
 	}
 
 	if (len < sizeof(struct nd_router_advert)) {
-		warn("short packet");
+		warn("%llu: short packet", time(NULL));
 		return;
 	}
 
 	icp = (struct icmp6_hdr*) ri->v.rtadv.msghdr.msg_iov[0].iov_base;
 
 	if (icp->icmp6_type != ND_ROUTER_ADVERT) {
-		warn("received a packet that is not a router advertisement");
+		warn("%llu: received a packet that is not a router advertisement", time(NULL));
 		return;
 	}
 
 	if (icp->icmp6_code != 0) {
-		warn("invalid ICMP6 code %d", icp->icmp6_code);
+		warn("%llu: invalid ICMP6 code %d", time(NULL), icp->icmp6_code);
 		return;
 	}
 
 	if (*hlimp != 255) {
-		warn("invalid RA with hop limit %d received on %s",
-		     *hlimp, if_indextoname(ifindex, ifnamebuf));
+		warn("%llu: invalid RA with hop limit %d received on %s",
+		     time(NULL), *hlimp, if_indextoname(ifindex, ifnamebuf));
 		return;
 	}
 
 	if (pi && !IN6_IS_ADDR_LINKLOCAL(&ri->v.rtadv.from.sin6_addr)) {
-		warn("RA with non link-local source %s received on %s",
-		     inet_ntop(AF_INET6, &ri->v.rtadv.from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN),
+		warn("%llu: RA with non link-local source %s received on %s",
+		     time(NULL), inet_ntop(AF_INET6, &ri->v.rtadv.from.sin6_addr, ntopbuf, INET6_ADDRSTRLEN),
 		     if_indextoname(ifindex, ifnamebuf));
 		return;
 	}
