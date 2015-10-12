@@ -4,11 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <sys/stdint.h>
 #include <sys/event.h>
 #include <sys/socket.h>
-#include <sys/tame.h>
 #include <imsg.h>
 
 #include "config.h"
@@ -26,7 +26,8 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	FILE *f;
 	size_t len;
 
-	tame(TAME_MALLOC | TAME_RPATH, NULL);
+	if (pledge("malloc rpath abort", NULL) < 0)
+		err(1, "pledge");
 
 	setproctitle("dhcpv4 lease parser");
 

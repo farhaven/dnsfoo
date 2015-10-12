@@ -8,10 +8,9 @@ found.
 
 Building
 --------
-If you're running a recent OpenBSD -current which has the `tame()` system call,
-a simple `make` should do the trick. If your system does not support `tame()`,
-you can simply comment out all calls to it, as well as the `#include
-<sys/tame.h>` directives.
+If you're running a recent OpenBSD -current which has the `pledge()` system call,
+a simple `make` should do the trick. If your system does not support `pledge()`,
+you can simply comment out all calls to it.
 
 `dnsfoo` requires a few things that are specific to OpenBSD, such as the `imsg`
 interface. If you port over `libutil`, it shouldn't be too hard to get working.

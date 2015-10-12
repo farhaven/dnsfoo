@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/ioctl.h>
 #include <sys/event.h>
@@ -14,8 +15,6 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
-
-#include <sys/tame.h>
 
 #include "handlers.h"
 #include "unbound_update.h"
@@ -140,7 +139,8 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		return;
 	}
 
-	tame(TAME_MALLOC|TAME_INET|TAME_ABORT, NULL);
+	if (pledge("malloc inet abort", NULL) < 0)
+		err(1, "pledge");
 
 	memset(&msg, 0x00, sizeof(msg));
 	msg.lifetime = ~0;

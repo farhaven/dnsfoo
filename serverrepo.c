@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-#include <sys/tame.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -191,7 +191,8 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 	if (!privdrop(config))
 		err(1, "privdrop");
 
-	tame(TAME_MALLOC|TAME_RPATH, NULL);
+	if (pledge("malloc rpath abort", NULL) < 0)
+		err(1, "pledge");
 
 	TAILQ_INIT(&devices.devices);
 	devices.expiry = (time_t) -1;
