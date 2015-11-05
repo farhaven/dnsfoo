@@ -140,7 +140,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 		return;
 	}
 
-	if (pledge("malloc inet abort", NULL) < 0)
+	if (pledge("stdio inet", NULL) < 0)
 		err(1, "pledge");
 
 	memset(&msg, 0x00, sizeof(msg));

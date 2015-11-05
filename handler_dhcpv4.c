@@ -26,7 +26,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	FILE *f;
 	size_t len;
 
-	if (pledge("malloc rpath abort", NULL) < 0)
+	if (pledge("stdio rpath", NULL) < 0)
 		err(1, "pledge");
 
 	setproctitle("dhcpv4 lease parser");

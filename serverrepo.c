@@ -195,7 +195,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 	if (!privdrop(config))
 		err(1, "privdrop");
 
-	if (pledge("malloc rpath abort", NULL) < 0)
+	if (pledge("stdio rpath", NULL) < 0)
 		err(1, "pledge");
 
 	TAILQ_INIT(&devices.devices);
