@@ -26,6 +26,7 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 	params[0] = "unbound-control";
 	params[1] = "forward_remove";
 	params[2] = ".";
+
 	if (msg->nslen > 0) {
 		size_t nslen = msg->nslen;
 		params[1] = "forward_add";
@@ -53,12 +54,19 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 				err(1, "waitpid");
 	}
 
-	if (msg->nslen > 0) {
-		for (numns = 0; numns < MAX_NAME_SERVERS; numns++) {
-			if (!srv[numns])
-				break;
-			free(srv[numns]);
-		}
+	/* Flush out negative answers from old name servers */
+	if (system("unbound-control flush_negative") < 0) {
+		err(1, "system");
+	}
+
+	if (msg->nslen <= 0) {
+		return;
+	}
+
+	for (numns = 0; numns < MAX_NAME_SERVERS; numns++) {
+		if (srv[numns] == NULL)
+			break;
+		free(srv[numns]);
 	}
 }
 
