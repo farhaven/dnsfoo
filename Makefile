@@ -6,7 +6,6 @@ MAN=
 CFLAGS += -Wall -Werror -pedantic
 CFLAGS += -std=c99
 CFLAGS += -g
-CFLAGS += -DYY_NO_UNPUT
 LDADD += -lutil -lfl -lkvm
 DPADD += ${LIBUTIL}
 
