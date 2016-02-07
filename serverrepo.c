@@ -14,7 +14,7 @@
 
 #include "dnsfoo.h"
 #include "config.h"
-#include "unbound_update.h"
+#include "upstream_update.h"
 
 struct srv_source {
 	TAILQ_ENTRY(srv_source) entry;
@@ -36,9 +36,9 @@ struct srv_devlist {
 };
 
 void
-serverrepo_update_unbound(int msgfd, struct srv_devlist *devices) {
+serverrepo_update_upstream(int msgfd, struct srv_devlist *devices) {
 	struct srv_device *dev;
-	struct unbound_update_msg msg;
+	struct upstream_update_msg msg;
 	struct imsgbuf ibuf;
 	char *msgdata;
 	size_t msglen;
@@ -57,17 +57,17 @@ serverrepo_update_unbound(int msgfd, struct srv_devlist *devices) {
 		}
 	}
 
-	if ((msgdata = unbound_update_msg_pack(&msg, &msglen)) == NULL)
-		err(1, "failed to pack unbound update message");
+	if ((msgdata = upstream_update_msg_pack(&msg, &msglen)) == NULL)
+		err(1, "failed to pack upstream update message");
 
 	imsg_init(&ibuf, msgfd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
+	if (imsg_compose(&ibuf, MSG_UPSTREAM_UPDATE, 0, 0, -1, msgdata, msglen) < 0)
 		err(1, "imsg_compose");
 	free(msgdata);
 
-	fprintf(stderr, "%llu: dispatching unbound update msg, dev=%s, nslen=%ld, type=%d\n",
+	fprintf(stderr, "%llu: dispatching upstream update msg, dev=%s, nslen=%ld, type=%d\n",
 	        time(NULL), msg.device, msg.nslen, msg.type);
-	unbound_update_msg_cleanup(&msg);
+	upstream_update_msg_cleanup(&msg);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0)
@@ -78,7 +78,7 @@ serverrepo_update_unbound(int msgfd, struct srv_devlist *devices) {
 }
 
 void
-serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd, struct srv_devlist *devices) {
+serverrepo_handle_msg(struct upstream_update_msg *msg, int msgfd, struct srv_devlist *devices) {
 	struct srv_device *dev;
 	struct srv_source *src;
 
@@ -128,7 +128,7 @@ serverrepo_handle_msg(struct unbound_update_msg *msg, int msgfd, struct srv_devl
 
 	fprintf(stderr, "%llu: dev=%p src=%p\n", time(NULL), (void*) dev, (void*) src);
 
-	serverrepo_update_unbound(msgfd, devices);
+	serverrepo_update_upstream(msgfd, devices);
 }
 
 void
@@ -176,14 +176,14 @@ serverrepo_handle_timeout(int msg_fd, struct srv_devlist *devs) {
 	fprintf(stderr, "%llu: done with timeout handling, new expiry=%lld\n",
 	        time(NULL), devs->expiry);
 
-	serverrepo_update_unbound(msg_fd, devs);
+	serverrepo_update_upstream(msg_fd, devs);
 }
 
 int
-serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) {
+serverrepo_loop(int msg_fd_handlers, int msg_fd_upstream, struct config *config) {
 	struct srv_devlist devices;
 	struct kevent ev;
-	struct unbound_update_msg msg;
+	struct upstream_update_msg msg;
 	struct imsgbuf ibuf;
 	struct imsg imsg;
 	int kq, ret;
@@ -220,7 +220,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 		switch (ret) {
 			case 0:
 				/* Timeout */
-				serverrepo_handle_timeout(msg_fd_unbound, &devices);
+				serverrepo_handle_timeout(msg_fd_upstream, &devices);
 				break;
 			case -1:
 				err(1, "kevent");
@@ -233,7 +233,7 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 					datalen = imsg.hdr.len - IMSG_HEADER_SIZE;
 					fprintf(stderr, "%llu: got %ld bytes of payload\n", time(NULL), datalen);
 
-					if (imsg.hdr.type != MSG_UNBOUND_UPDATE)
+					if (imsg.hdr.type != MSG_UPSTREAM_UPDATE)
 						errx(1, "unknown IMSG received: %d", imsg.hdr.type);
 
 					if ((imsgdata = calloc(1, datalen)) == NULL)
@@ -242,12 +242,12 @@ serverrepo_loop(int msg_fd_handlers, int msg_fd_unbound, struct config *config) 
 					imsgdata[datalen - 1] = '\0';
 					imsg_free(&imsg);
 
-					if (!unbound_update_msg_unpack(&msg, imsgdata, datalen))
+					if (!upstream_update_msg_unpack(&msg, imsgdata, datalen))
 						err(1, "failed to unpack update msg");
 					free(imsgdata);
 
-					serverrepo_handle_msg(&msg, msg_fd_unbound, &devices);
-					unbound_update_msg_cleanup(&msg);
+					serverrepo_handle_msg(&msg, msg_fd_upstream, &devices);
+					upstream_update_msg_cleanup(&msg);
 				}
 				if (n == -1)
 					err(1, "imsg_get");

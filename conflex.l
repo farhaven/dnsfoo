@@ -9,8 +9,13 @@ extern YYSTYPE yylval;
 %}
 
 %%
+server		return SERVER;
+unbound		return UNBOUND;
+rebound		return REBOUND;
+
 user		return USER;
 device		return DEVICE;
+
 dhcpv4		return DHCPV4;
 rtadv		return RTADV;
 \{		return '{';

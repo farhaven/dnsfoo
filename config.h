@@ -9,6 +9,11 @@ enum srctype {
 	SRC_UNKNOWN
 };
 
+enum srvtype {
+	SRV_UNBOUND,
+	SRV_REBOUND
+};
+
 struct srcspec {
 	TAILQ_ENTRY(srcspec) entry;
 	enum srctype type;
@@ -28,6 +33,7 @@ struct device {
 struct config {
 	TAILQ_HEAD(, device) devices;
 	struct passwd *pw;
+	enum srvtype srvtype;
 };
 
 typedef struct {

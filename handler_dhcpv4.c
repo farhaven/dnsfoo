@@ -13,13 +13,13 @@
 
 #include "config.h"
 #include "handlers.h"
-#include "unbound_update.h"
+#include "upstream_update.h"
 
 void
 dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	const char *match[] = { "option domain-name-servers", "option dhcp-lease-time" };
 	struct handler_info *info = (struct handler_info*) udata;
-	struct unbound_update_msg msg;
+	struct upstream_update_msg msg;
 	struct imsgbuf ibuf;
 	char *buf, *data;
 	const char *errstr;
@@ -60,8 +60,8 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 					break;
 				if (*p == '\0')
 					continue;
-				if (!unbound_update_msg_append_ns(&msg, p))
-					err(1, "unbound_update_msg_append_ns");
+				if (!upstream_update_msg_append_ns(&msg, p))
+					err(1, "upstream_update_msg_append_ns");
 				fprintf(stderr, "%llu: appended %s to list of name servers, list is now %ld bytes\n",
 				        time(NULL), p, msg.nslen);
 			}
@@ -81,13 +81,13 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 		return;
 	}
 
-	if ((data = unbound_update_msg_pack(&msg, &len)) == NULL)
-		err(1, "unbound_update_msg_pack");
+	if ((data = upstream_update_msg_pack(&msg, &len)) == NULL)
+		err(1, "upstream_update_msg_pack");
 	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, len) < 0)
+	if (imsg_compose(&ibuf, MSG_UPSTREAM_UPDATE, 0, 0, -1, data, len) < 0)
 		err(1, "imsg_compose");
 	free(data);
-	unbound_update_msg_cleanup(&msg);
+	upstream_update_msg_cleanup(&msg);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {
@@ -96,7 +96,7 @@ dhcpv4_handle_update(int fd, int msg_fd, void *udata) {
 	} while (errno == EAGAIN);
 
 exit_fail:
-	unbound_update_msg_cleanup(&msg);
+	upstream_update_msg_cleanup(&msg);
 	err(1, "msgbuf_write");
 }
 

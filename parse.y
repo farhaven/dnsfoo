@@ -24,10 +24,17 @@ YYSTYPE yylval = { { NULL }, 1 };
 struct config *config;
 %}
 
+%token	SERVER
+%token	UNBOUND
+%token	REBOUND
+
 %token	USER
 %token	DEVICE
+
 %token	ERROR
+
 %token	DHCPV4 RTADV
+
 %token	STRING
 
 %type	<v.string> STRING
@@ -40,11 +47,19 @@ struct config *config;
 /* Grammar */
 grammar	:
 		| grammar '\n'
+		| grammar server '\n'
 		| grammar user '\n'
 		| grammar device '\n'
 		| grammar error '\n' { file.errors++; }
 		;
 
+server		: SERVER UNBOUND {
+			config->srvtype = SRV_UNBOUND;
+		}
+		| SERVER REBOUND {
+			config->srvtype = SRV_REBOUND;
+		}
+		;
 user		: USER STRING {
 			if ((config->pw = getpwnam($2)) == NULL)
 					errx(1, "Can't find user %s", $2);
@@ -139,6 +154,8 @@ parse_config(char *filename) {
 		err(1, "calloc");
 	}
 	TAILQ_INIT(&config->devices);
+
+	config->srvtype = SRV_UNBOUND;
 
 	yyin = file.stream;
 	yyparse();

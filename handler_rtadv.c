@@ -17,7 +17,7 @@
 #include <netinet/icmp6.h>
 
 #include "handlers.h"
-#include "unbound_update.h"
+#include "upstream_update.h"
 
 #define ALLROUTERS "ff02::2"
 #define PKTLEN 1500
@@ -118,7 +118,7 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 	char *data = ri->v.rtadv.msghdr.msg_iov[0].iov_base;
 	struct ifreq req;
 	struct imsgbuf ibuf;
-	struct unbound_update_msg msg;
+	struct upstream_update_msg msg;
 	struct nd_opt_hdr *opthdr;
 	char ntopbuf[INET6_ADDRSTRLEN];
 	off_t pkt_off = sizeof(struct nd_router_advert);
@@ -176,8 +176,8 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 			memcpy(&ns, opt, sizeof(struct in6_addr));
 
 			addr = inet_ntop(AF_INET6, &ns, ntopbuf, INET6_ADDRSTRLEN);
-			if (!unbound_update_msg_append_ns(&msg, addr))
-				err(1, "unbound_update_msg_append_ns");
+			if (!upstream_update_msg_append_ns(&msg, addr))
+				err(1, "upstream_update_msg_append_ns");
 		}
 	}
 
@@ -186,13 +186,13 @@ rtadv_handle_individual_ra(struct handler_info *ri, ssize_t len, int msg_fd) {
 
 	msg.device = strdup(ri->device);
 	msg.type = ri->type;
-	if ((data = unbound_update_msg_pack(&msg, &msglen)) == NULL)
-		err(1, "unbound_update_msg_pack");
+	if ((data = upstream_update_msg_pack(&msg, &msglen)) == NULL)
+		err(1, "upstream_update_msg_pack");
 	imsg_init(&ibuf, msg_fd);
-	if (imsg_compose(&ibuf, MSG_UNBOUND_UPDATE, 0, 0, -1, data, msglen) < 0)
+	if (imsg_compose(&ibuf, MSG_UPSTREAM_UPDATE, 0, 0, -1, data, msglen) < 0)
 		err(1, "imsg_compose");
 	free(data);
-	unbound_update_msg_cleanup(&msg);
+	upstream_update_msg_cleanup(&msg);
 
 	do {
 		if (msgbuf_write(&ibuf.w) > 0) {

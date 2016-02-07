@@ -2,15 +2,16 @@ DNS Foo
 =======
 
 This is a simple(-ish) program that watches `dhclient` lease files and IPv6
-router advertisements for DNS information and calls `unbound-control forward
-<ns1> <ns2> <ns3>` to update unbounds default forward zone with the servers it
-found.
+router advertisements for DNS information and either calls `unbound-control
+forward <ns1> <ns2> <ns3>` to update unbounds default forward zone with the
+servers it found or rewrites `/etc/rebound.conf` and sends a HUP signal to
+rebound to update its configuration.
 
 Building
 --------
-If you're running a recent OpenBSD -current which has the `pledge()` system call,
-a simple `make` should do the trick. If your system does not support `pledge()`,
-you can simply comment out all calls to it.
+If you're running a recent OpenBSD -current which has the `pledge()` system
+call, a simple `make` should do the trick. If your system does not support
+`pledge()`, you can simply comment out all calls to it.
 
 `dnsfoo` requires a few things that are specific to OpenBSD, such as the `imsg`
 interface. If you port over `libutil`, it shouldn't be too hard to get working.
@@ -22,6 +23,7 @@ Configuration information is taken from `dnsfoo.conf` in the current directory.
 This is an example:
 
     user "_dhcp"
+    server unbound
 
     device "trunk0" {
         dhcpv4 "/var/db/dhclient.leases.trunk0"
@@ -33,6 +35,9 @@ This is an example:
 can use more than one source statement if you want. `user` specifies the user
 to drop priviledges to. This user must be able to control unbound with
 `unbound-control`. The default is `_dhcp`.
+
+If you are using `rebound` instead of unbound, you can add a `server rebound`
+statement to your configuration file. The default is unbound.
 
 Usage
 -----

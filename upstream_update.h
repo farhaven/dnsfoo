@@ -2,14 +2,14 @@
 #define _UNBOUND_UPDATE_H
 #include "config.h"
 
-enum unbound_msg_type {
-	MSG_UNBOUND_UPDATE
+enum upstream_msg_type {
+	MSG_UPSTREAM_UPDATE
 };
 
 /* Packed message layout:
  * | type | nslen | lifetime | device | nameservers |
  */
-struct unbound_update_msg {
+struct upstream_update_msg {
 	/* Source type this message originated from */
 	enum srctype type;
 	/* update life time, ~0 means infinity */
@@ -22,9 +22,9 @@ struct unbound_update_msg {
 	char *ns;
 };
 
-char *unbound_update_msg_pack(struct unbound_update_msg *, size_t *);
-int unbound_update_msg_unpack(struct unbound_update_msg *, char *, size_t);
-int unbound_update_msg_append_ns(struct unbound_update_msg *, const char *);
-int unbound_update_loop(int, struct config*);
-void unbound_update_msg_cleanup(struct unbound_update_msg *);
+char *upstream_update_msg_pack(struct upstream_update_msg *, size_t *);
+int upstream_update_msg_unpack(struct upstream_update_msg *, char *, size_t);
+int upstream_update_msg_append_ns(struct upstream_update_msg *, const char *);
+int upstream_update_loop(int, struct config*);
+void upstream_update_msg_cleanup(struct upstream_update_msg *);
 #endif /* _UNBOUND_UPDATE_H */

@@ -1,22 +1,76 @@
 #include <err.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/sysctl.h>
 #include <sys/event.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <imsg.h>
+#include <kvm.h>
 
 #include "dnsfoo.h"
 #include "config.h"
-#include "unbound_update.h"
+#include "upstream_update.h"
 
 #define MAX_NAME_SERVERS 5
 
 void
-unbound_update_dispatch(struct unbound_update_msg *msg) {
+upstream_update_dispatch_rebound(struct upstream_update_msg *msg) {
+	char errbuf[_POSIX2_LINE_MAX];
+	struct kinfo_proc *plist;
+	int fd, nprocs, idx;
+	kvm_t *kvm;
+	pid_t rebound_pid = 0;
+
+	if (msg->nslen <= 0) {
+		return;
+	}
+
+	/* XXX: detect config file from rebound commandline params? */
+	if ((fd = open("/etc/rebound.conf", O_WRONLY | O_CREAT, 0644)) < 0) {
+		err(1, "open");
+	}
+
+	/* Rebound has only one upstream, so we only use the first one from the message */
+	fprintf(stderr, "%llu: writing \"%s\" to rebound conf as new name server\n", time(NULL), msg->ns);
+	dprintf(fd, "%s\n", msg->ns);
+	close(fd);
+
+	/* HUP rebound */
+	kvm = kvm_openfiles(NULL, NULL, NULL, KVM_NO_FILES, errbuf);
+	if (!kvm) {
+		errx(1, "%s", errbuf);
+	}
+	plist = kvm_getprocs(kvm, KERN_PROC_ALL, 0, sizeof(*plist), &nprocs);
+	if (!plist) {
+		errx(1, "%s", kvm_geterr(kvm));
+	}
+	for (idx = 0; idx < nprocs; idx++) {
+		if (!strcmp(plist[idx].p_comm, "rebound") && plist[idx].p_uid == 0) {
+			rebound_pid = plist[idx].p_pid;
+		}
+	}
+	kvm_close(kvm);
+
+	if (rebound_pid == 0) {
+		fprintf(stderr, "%llu: couldn't determine rebound parent PID\n", time(NULL));
+		return;
+	}
+
+	if (kill(rebound_pid, SIGHUP) == -1) {
+		fprintf(stderr, "%llu: signalling rebound (%d): %s\n", time(NULL), rebound_pid, strerror(errno));
+	}
+}
+
+void
+upstream_update_dispatch_unbound(struct upstream_update_msg *msg) {
 	char *params[MAX_NAME_SERVERS + 4]; /* unbound-control, forward_{add, remove}, '.', final NULL */
 	char *p, **srv;
 	int numns = 0;
@@ -38,6 +92,10 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 			nslen -= strlen(p) + 1;
 			p += strlen(p) + 1;
 		}
+
+		if (nslen > 0) {
+			warnx("Ignoring further name servers");
+		}
 	}
 
 	switch ((child = fork())) {
@@ -54,8 +112,8 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 				err(1, "waitpid");
 	}
 
-	/* Flush out negative answers from old name servers */
-	if (system("unbound-control flush_negative") < 0) {
+	/* Flush out answers from old name servers */
+	if (system("unbound-control flush_zone .") < 0) {
 		err(1, "system");
 	}
 
@@ -71,8 +129,8 @@ unbound_update_dispatch(struct unbound_update_msg *msg) {
 }
 
 void
-unbound_update_handle_imsg(struct imsgbuf *ibuf) {
-	struct unbound_update_msg msg;
+upstream_update_handle_imsg(struct imsgbuf *ibuf, struct config *config) {
+	struct upstream_update_msg msg;
 	struct imsg imsg;
 	ssize_t n, datalen;
 	char *idata;
@@ -91,7 +149,7 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		datalen = imsg.hdr.len - IMSG_HEADER_SIZE;
 
 		switch (imsg.hdr.type) {
-			case MSG_UNBOUND_UPDATE:
+			case MSG_UPSTREAM_UPDATE:
 				break;
 			default:
 				warnx("%llu: unknown IMSG received: %d", time(NULL), imsg.hdr.type);
@@ -105,28 +163,35 @@ unbound_update_handle_imsg(struct imsgbuf *ibuf) {
 		idata[datalen - 1] = '\0';
 		imsg_free(&imsg);
 
-		if (!unbound_update_msg_unpack(&msg, idata, datalen))
+		if (!upstream_update_msg_unpack(&msg, idata, datalen))
 			errx(1, "failed to unpack update msg");
 		free(idata);
 #ifndef NDEBUG
 		fprintf(stderr, "%llu: device=\"%s\", nslen=%ld lifetime=%u\n",
 		        time(NULL), msg.device, msg.nslen, msg.lifetime);
 #endif
-		unbound_update_dispatch(&msg);
-		unbound_update_msg_cleanup(&msg);
+		if (config->srvtype == SRV_UNBOUND) {
+			upstream_update_dispatch_unbound(&msg);
+		} else {
+			upstream_update_dispatch_rebound(&msg);
+		}
+		upstream_update_msg_cleanup(&msg);
 	}
 }
 
 int
-unbound_update_loop(int msg_fd, struct config *config) {
+upstream_update_loop(int msg_fd, struct config *config) {
 	struct imsgbuf ibuf;
 	struct kevent ev;
 	int kq;
 
-	setproctitle("unbound update loop");
+	setproctitle("upstream update loop");
 
-	if (!privdrop(config))
-		err(1, "privdrop");
+	if (config->srvtype != SRV_REBOUND) {
+		/* XXX: move signalling in upstream_update_dispatch_rebound to parent */
+		if (!privdrop(config))
+			err(1, "privdrop");
+	}
 
 	imsg_init(&ibuf, msg_fd);
 
@@ -144,18 +209,18 @@ unbound_update_loop(int msg_fd, struct config *config) {
 		if (kevent(kq, NULL, 0, &ev, 1, NULL) < 1) {
 			err(1, "kevent");
 		}
-		unbound_update_handle_imsg(&ibuf);
+		upstream_update_handle_imsg(&ibuf, config);
 	}
 
 	return 1;
 }
 
 char *
-unbound_update_msg_pack(struct unbound_update_msg *msg, size_t *len) {
+upstream_update_msg_pack(struct upstream_update_msg *msg, size_t *len) {
 	char *p = NULL;
 
 	if (msg->device == NULL) {
-		warnx("%llu: tried to pack an incomplete unbound update msg", time(NULL));
+		warnx("%llu: tried to pack an incomplete upstream update msg", time(NULL));
 		goto exit_fail;
 	}
 
@@ -194,7 +259,7 @@ exit_fail:
 }
 
 int
-unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srclen) {
+upstream_update_msg_unpack(struct upstream_update_msg *msg, char *src, size_t srclen) {
 	size_t off = 0, len;
 
 	memset(msg, 0x00, sizeof(*msg));
@@ -252,12 +317,12 @@ unbound_update_msg_unpack(struct unbound_update_msg *msg, char *src, size_t srcl
 	return 1;
 
 exit_fail:
-	unbound_update_msg_cleanup(msg);
+	upstream_update_msg_cleanup(msg);
 	return 0;
 }
 
 int
-unbound_update_msg_append_ns(struct unbound_update_msg *msg, const char *ns) {
+upstream_update_msg_append_ns(struct upstream_update_msg *msg, const char *ns) {
 	msg->ns = realloc(msg->ns, msg->nslen + strlen(ns) + 1);
 	if (msg->ns == NULL)
 		return 0;
@@ -267,7 +332,7 @@ unbound_update_msg_append_ns(struct unbound_update_msg *msg, const char *ns) {
 }
 
 void
-unbound_update_msg_cleanup(struct unbound_update_msg *msg) {
+upstream_update_msg_cleanup(struct upstream_update_msg *msg) {
 	free(msg->device);
 	free(msg->ns);
 	memset(msg, 0x00, sizeof(*msg));
