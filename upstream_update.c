@@ -34,7 +34,7 @@ upstream_update_dispatch_rebound(struct upstream_update_msg *msg) {
 	}
 
 	/* XXX: detect config file from rebound commandline params? */
-	if ((fd = open("/etc/rebound.conf", O_WRONLY | O_CREAT, 0644)) < 0) {
+	if ((fd = open("/etc/rebound.conf", O_TRUNC | O_WRONLY | O_CREAT, 0644)) < 0) {
 		err(1, "open");
 	}
 
